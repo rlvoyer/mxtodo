@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'    
+
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{matrix.allow_failures}}
+
+    strategy:
+      matrix:
+        emacs_version:
+          - 26.1
+          - 26.2
+          - 26.3
+          - 27.1
+          - 27.2
+          - 27.3
+
+        allow_failures: [false]
+
+        include:
+          - emacs_version: snapshot
+            allow_failures: true
+
+    steps:
+    - name: Set up Emacs
+      uses: purcell/setup-emacs@master
+      with:
+        version: ${{matrix.emacs_version}}
+
+    - name: Check out the source code
+      uses: actions/checkout@v2
+
+    - name: Test the project
+      run: |
+        emacs -batch -l ert -l test/test.el -f ert-run-tests-batch-and-exit
