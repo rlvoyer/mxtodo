@@ -43,5 +43,5 @@ jobs:
 
     - name: Test the project
       run: |
-        eldev -p -dtT -C test --expect 6
+        eldev -p -dtT -C test --expect 5
         eldev -dtT -C compile --set all --warnings-as-errors
