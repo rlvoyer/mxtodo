@@ -38,7 +38,10 @@ jobs:
     - name: Install Eldev
       run: curl -fsSL https://raw.github.com/doublep/eldev/master/webinstall/github-eldev | sh
 
+    - name: Check out the source code
+      uses: actions/checkout@v2
+
     - name: Test the project
       run: |
-        eldev -p -dtT -C test --expect 20
+        eldev -p -dtT -C test --expect 6
         eldev -dtT -C compile --set all --warnings-as-errors
