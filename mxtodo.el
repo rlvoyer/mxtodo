@@ -8,6 +8,17 @@
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
 
+;; This program is free software: you can redistribute it and/or modify it under the terms of the
+;; GNU General Public License as published by the Free Software Foundation, either version 3 of the
+;; License, or (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+;; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+;; the GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License along with this program.  If
+;; not, see <https://www.gnu.org/licenses/>.
+
 ;;; Commentary:
 
 ;; This package provides a buffers and buffer-local functionality for managing TODOs in Markdown
@@ -82,7 +93,7 @@
 
 (defun mxtodo--display-date-from-file-path (file-path)
   "Parse a TODO filename of the form /PATH/TO/FILE/YYYY-M-D.extension into a ts date."
-  (let ((display-date-str (file-name-sans-extension (first (last (split-string file-path "/"))))))
+  (let ((display-date-str (file-name-sans-extension (car (last (split-string file-path "/"))))))
     (mxtodo--ts-date-from-string display-date-str)))
 
 (defun mxtodo--render-date (date)
@@ -238,3 +249,5 @@
 ;;(define-key map (kbd "g") 'mxtodo-make-todo-buffer)
 
 (provide 'mxtodo)
+
+;;; mxtodo.el ends here
