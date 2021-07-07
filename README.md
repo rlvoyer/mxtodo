@@ -9,5 +9,5 @@ To develop on mxtodo, you'll want to have [eldev](https://github.com/doublep/eld
 ## Running tests
 
 ```shell
-eldev -p -dtT -C test --expect 6
+eldev -p -dtT -C test --expect 5
 ```

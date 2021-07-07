@@ -164,13 +164,14 @@
               :date-due-ts date-due))))
 
 ;;;###autoload
-(defun mxtodo-make-todo-buffer ()
+(defun mxtodo-make-todo-buffer (&optional buffer-name)
   "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
   (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
   (let* ((temp-file-name (mxtodo--gather-todos-tmpfile))
          (temp-file-text (f-read-text temp-file-name)))
     (message temp-file-name)
-    (with-current-buffer (get-buffer-create mxtodo-buffer-name)
+    (with-current-buffer (get-buffer-create buffer-name)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (text-mode)
@@ -199,18 +200,16 @@
 (defun mxtodo--find-invisible-region-in-line ()
   "Return the beginning point of invisible region on the current line."
   (save-excursion
-    (with-current-buffer mxtodo-buffer-name
-      (progn
-        (beginning-of-line)
-        (next-single-property-change (point) 'invisible)))))
+    (progn
+      (beginning-of-line)
+      (next-single-property-change (point) 'invisible))))
 
 (defun mxtodo--read-todo-from-line ()
   "Get the TODO item on the current line."
-  (with-current-buffer mxtodo-buffer-name
-    (car
-     (read-from-string
-      (buffer-substring
-       (mxtodo--find-invisible-region-in-line) (line-end-position))))))
+  (car
+   (read-from-string
+    (buffer-substring
+     (mxtodo--find-invisible-region-in-line) (line-end-position)))))
 
 (defun mxtodo--delete-current-line ()
   "Delete (not kill) the current line."
@@ -239,10 +238,11 @@
     (kill-buffer)))
 
 ;;;###autoload
-(defun mxtodo-toggle-current-todo-completed ()
+(defun mxtodo-toggle-current-todo-completed (&optional buffer-name)
   "Toggle the `completed` value of the TODO at point."
   (interactive)
-  (with-current-buffer mxtodo-buffer-name
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
     (let ((todo (mxtodo--toggle-todo-completed (mxtodo--read-todo-from-line))))
       (mxtodo--write-todo-to-file todo)))
   nil)
