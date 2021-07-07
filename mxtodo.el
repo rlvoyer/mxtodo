@@ -46,10 +46,6 @@
 (defconst mxtodo-buffer-name "*todo-list*"
   "The name of the TODO search results buffer.")
 
-(defvar mxtodo--grep-command
-  (format "rg --json \"^- \\[(x|\\s)\\] (.*?)$\" %s" mxtodo-folder-path)
-  "The grep command used to find TODOs.")
-
 (cl-defstruct mxtodo-item
   "A data struct for TODO information."
   (file-path nil :readonly t :type string)
@@ -60,14 +56,18 @@
   (text nil :type string)
   (is-completed nil :type boolean))
 
-(defun mxtodo--gather-todos-tmpfile ()
+(defun mxtodo--grep-command (folder-path)
+  "The grep command used to find TODOs."
+  (format "rg --json \"^- \\[(x|\\s)\\] (.*?)$\" %s" folder-path))
+
+(defun mxtodo--gather-todos-tmpfile (folder-path)
   "Gather TODO items from mxtodo-folder-path and write to a temporary file."
   (let ((tmp-file-1 (make-temp-file "results"))
         (tmp-file-2 (make-temp-file "filetimestamps"))
         (tmp-file-3 (make-temp-file "todos")))
     (let ((full-command
            (concat
-            mxtodo--grep-command " | "
+            (mxtodo--grep-command folder-path) " | "
             (format "%s" "jq -r -c 'select(.type==\"match\")|[.data.path.text, .data.line_number, .data.submatches[0].match.text]|@tsv' | ")
             (format "tee %s" tmp-file-1) " | "
             "cut -f1 | xargs stat -f %c "
@@ -164,11 +164,12 @@
               :date-due-ts date-due))))
 
 ;;;###autoload
-(defun mxtodo-make-todo-buffer (&optional buffer-name)
+(defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
   "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
   (interactive)
   (unless buffer-name (setq buffer-name mxtodo-buffer-name))
-  (let* ((temp-file-name (mxtodo--gather-todos-tmpfile))
+  (unless folder-path (setq folder-path mxtodo-folder-path))
+  (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
          (temp-file-text (f-read-text temp-file-name)))
     (message temp-file-name)
     (with-current-buffer (get-buffer-create buffer-name)
