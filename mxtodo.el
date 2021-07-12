@@ -170,18 +170,25 @@
   (unless buffer-name (setq buffer-name mxtodo-buffer-name))
   (unless folder-path (setq folder-path mxtodo-folder-path))
   (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
-         (temp-file-text (f-read-text temp-file-name)))
-    (message temp-file-name)
+         (temp-file-text (f-read-text temp-file-name))
+         (todos (list)))
+    (message (format "Reading TODOS from %s" temp-file-name))
+    (dolist (line (split-string temp-file-text "\n"))
+      (if (not (string= "" line))
+          (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
+    (setq todos (cl-sort
+                 (copy-tree todos)
+                 'ts>
+                 :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
     (with-current-buffer (get-buffer-create buffer-name)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (text-mode)
         (save-excursion
           (goto-char (point-min))
-          (dolist (line (split-string temp-file-text "\n"))
-            (if (not (string= "" line))
-                (let* ((todo (mxtodo--make-todo-from-temp-file-line line)))
-                  (insert (mxtodo--render-todo todo) "\n"))))))
+          (while todos
+            (let ((todo (pop todos)))
+              (insert (mxtodo--render-todo todo) "\n")))))
       (read-only-mode))))
 
 (defun mxtodo--todo-completed-p (todo-text)

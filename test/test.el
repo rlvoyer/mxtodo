@@ -91,3 +91,59 @@
          (expected "- [ ] write some unit tests (created 2021-6-24 / )")
          (actual (todo-text-no-properties (mxtodo--render-todo input-todo))))
     (should (equal expected actual))))
+
+(defun generate-todo-file (directory)
+  "Generate a test TODO file."
+  (let* ((year 2021)
+         (month (1+ (random 12)))
+         (day (1+ (random 31)))
+         (date-str (format "%d-%d-%d" year month day))
+         (filename (format "%s.md" date-str))
+         (todo-file (concat (file-name-as-directory directory) filename)))
+    (with-current-buffer (find-file-noselect todo-file t t)
+      (dotimes (i (random 10))
+        (let ((is-completed (equal (random 2) 1)))
+          (insert (format "- [%s] do thing %d" (if is-completed "x" "") i "\n")))
+        (insert "\n"))
+      (save-buffer)
+      (kill-buffer))))
+
+(defun setup-test-data (directory)
+  "Create a temp directory with `num-files` TODO files."
+  (dotimes (i 5)
+    (generate-todo-file directory)))
+
+(defun read-todos-from-buffer (buffer-name)
+  "Read each TODO from the current buffer and construct a mxtodo-item from each line, returning a list."
+  (with-current-buffer buffer-name
+    (save-excursion
+      (let ((buffer-text (buffer-string))
+            (todos (list)))
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((todo (mxtodo--read-todo-from-line)))
+            (setq todos (cons todo todos)))
+          (forward-line 1))
+        (reverse todos)))))
+
+(defun sort-todos (todos)
+  "Sort the specified list of TODO items."
+  (let ((sorted (cl-sort
+                 (copy-tree todos)
+                 'ts>
+                 :key (lambda (x) (mxtodo-item-file-display-date-ts x)))))
+    sorted))
+
+(ert-deftest test-buffer-is-sorted-by-create-date ()
+  "Tests that the TODO buffer is sorted by create date by default."
+  (with-temp-buffer
+    (setup-test-data (temporary-file-directory))
+    (mxtodo-make-todo-buffer (current-buffer) (temporary-file-directory))
+    (let* ((todos (read-todos-from-buffer (current-buffer)))
+           (todos-sorted (sort-todos todos))
+           (todos-display-dates (mapcar 'mxtodo-item-file-display-date-ts todos))
+           (todos-display-dates-sorted (mapcar 'mxtodo-item-file-display-date-ts todos-sorted))
+           (actual todos-display-dates)
+           (expected todos-display-dates-sorted))
+      (should (equal expected actual)))))
+
