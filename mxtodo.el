@@ -21,8 +21,8 @@
 
 ;;; Commentary:
 
-;; This package provides a buffers and buffer-local functionality for managing TODOs in Markdown
-;; notes files.
+;; This package provides a TODO buffer and buffer-local functionality for managing TODOs in
+;; Markdown notes files.
 
 ;;; Code:
 

@@ -1,4 +1,4 @@
-;;; -*- lexical-binding: t -*-
+;;; -*- lexical-binding: t; -*-
 
 ;; This program is free software: you can redistribute it and/or modify it under the terms of the
 ;; GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -17,9 +17,9 @@
 (require 'mxtodo)
 
 (ert-deftest test-display-date-from-file-path ()
-  "Tests the construction of a TODO display date from its filename."
+  "Tests the construction of a todo display date from its filename."
   (should (equal (mxtodo--display-date-from-file-path "/foo/bar/2021-5-24.md")
-                 (make-ts 
+                 (make-ts
                   :year 2021
                   :month 5
                   :day 24
@@ -29,7 +29,7 @@
 
 (ert-deftest test-render-a-todo-date ()
   "Tests that a TODO renders correctly."
-  (let ((date (make-ts 
+  (let ((date (make-ts
                :year 2021
                :month 5
                :day 24
@@ -58,7 +58,7 @@
     (should (equal expected actual))))
 
 (defun todo-text-no-properties (rendered-todo-item)
-  "Test helper function that renders a TODO as a string with no properties."
+  "Test helper function that renders a RENDERED-TODO-ITEM as a string with no properties."
   (substring-no-properties rendered-todo-item 0 (next-single-property-change 0 'invisible rendered-todo-item)))
 
 (ert-deftest test-render-date ()
@@ -69,7 +69,7 @@
                    :day 24
                    :hour 0
                    :minute 0
-                   :second 0)) 
+                   :second 0))
          (expected "2021-6-24")
          (actual (mxtodo--render-date date)))
     (should (equal expected actual))))
@@ -93,7 +93,7 @@
     (should (equal expected actual))))
 
 (defun generate-todo-file (directory)
-  "Generate a test TODO file."
+  "Generate a test test todo file in DIRECTORY."
   (let* ((year 2021)
          (month (1+ (random 12)))
          (day (1+ (random 31)))
@@ -102,23 +102,23 @@
          (todo-file (concat (file-name-as-directory directory) filename)))
     (with-current-buffer (find-file-noselect todo-file t t)
       (dotimes (i (random 10))
-        (let ((is-completed (equal (random 2) 1)))
-          (insert (format "- [%s] do thing %d" (if is-completed "x" "") i "\n")))
+        (let* ((is-completed (equal (random 2) 1))
+               (x-or-empty (if is-completed "x" "")))
+          (insert (format "- [%s] do thing %d" x-or-empty i)))
         (insert "\n"))
       (save-buffer)
       (kill-buffer))))
 
 (defun setup-test-data (directory)
-  "Create a temp directory with `num-files` TODO files."
-  (dotimes (i 5)
+  "Create temp directory DIRECTORY with 5 todo files."
+  (dotimes (_ 5)
     (generate-todo-file directory)))
 
 (defun read-todos-from-buffer (buffer-name)
-  "Read each TODO from the current buffer and construct a mxtodo-item from each line, returning a list."
+  "Read each todo from buffer named BUFFER-NAME and construct a mxtodo-item from each line, returning a list."
   (with-current-buffer buffer-name
     (save-excursion
-      (let ((buffer-text (buffer-string))
-            (todos (list)))
+      (let ((todos (list)))
         (goto-char (point-min))
         (while (not (eobp))
           (let ((todo (mxtodo--read-todo-from-line)))
@@ -127,7 +127,7 @@
         (reverse todos)))))
 
 (defun sort-todos (todos)
-  "Sort the specified list of TODO items."
+  "Sort the list of specified TODOS."
   (let ((sorted (cl-sort
                  (copy-tree todos)
                  'ts>
