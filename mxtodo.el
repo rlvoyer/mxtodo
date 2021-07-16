@@ -230,7 +230,7 @@
   (let ((date (mxtodo-item-date-due-ts todo)))
     (if (not (equal date nil))
         (format " (due %s)" (mxtodo--render-date date))
-    ""))
+    "")))
 
 (defun mxtodo--todo-str (todo)
   "Render a TODO as a string."
