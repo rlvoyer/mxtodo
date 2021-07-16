@@ -39,6 +39,20 @@
     (should (equal (mxtodo--render-date date)
                    "2021-5-24"))))
 
+(ert-deftest test-extract-info-from-text-returns-due-date ()
+  "Test that mxtodo--extract-info-from-text optionally returns due date."
+  (let* ((actual (mxtodo--extract-info-from-text "- [ ] write more tests (due 2021-7-14)"))
+         (expected-due-date
+          (make-ts
+           :year 2021
+           :month 7
+           :day 14
+           :hour 0
+           :minute 0
+           :second 0))
+         (expected (vector "write more tests" nil expected-due-date)))
+    (should (equal (aref expected 2) (aref actual 2)))))
+
 (ert-deftest test-make-todo-from-temp-file-line ()
   "Tests that a TODO can be constructed from a temp file line."
   (let ((expected
@@ -146,4 +160,3 @@
            (actual todos-display-dates)
            (expected todos-display-dates-sorted))
       (should (equal expected actual)))))
-

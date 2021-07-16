@@ -114,15 +114,15 @@
       (format "created %s" (mxtodo--render-date date))
     ""))
 
-(defun mxtodo--render-is-completed (is-completed)
-  "Render a checkbox indicating whether the TODO is completed."
-  (if is-completed "- [x]" "- [ ]"))
+(defun mxtodo--render-is-completed (todo)
+  "Render a checkbox indicating whether TODO is completed."
+  (if (mxtodo-item-is-completed todo) "- [x]" "- [ ]"))
 
 (defun mxtodo--render-todo (todo)
   "Render a TODO as a string. This string includes an invisible portion."
   (let* ((visible-text
           (format "%s %s (%s / %s)"
-                  (mxtodo--render-is-completed (mxtodo-item-is-completed todo))
+                  (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
                   (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
                   (mxtodo--render-due-date (mxtodo-item-date-due-ts todo))))
@@ -136,7 +136,6 @@
 
 (defun mxtodo--extract-info-from-text (todo-line)
   "Extract a 3-element vector containing an is-completed bool, the TODO text, and a due date from a string of the form `- [ ] do something useful (due 2021-7-2)`."
-  ;;  (if (string-match "^- \\[\\(x\\|[[:blank:]]\\)\\] \\(.*\\)$" todo-line)
   (if (string-match "^- \\[\\(x\\|[[:blank:]]\\)\\] \\(.*?\\)\\(?: (due \\(.*\\))\\)?$" todo-line)
       (let* ((completed-text (match-string 1 todo-line))
              (todo-text (match-string 2 todo-line))
@@ -226,13 +225,20 @@
      (progn (forward-visible-line 0) (point))
      (progn (forward-visible-line 1) (point)))))
 
+(defun mxtodo--due-date-str (todo)
+  "Serialize TODO due date."
+  (let ((date (mxtodo-item-date-due-ts todo)))
+    (if (not (equal date nil))
+        (format " (due %s)" (mxtodo--render-date date))
+    ""))
+
 (defun mxtodo--todo-str (todo)
   "Render a TODO as a string."
   (let* ((todo-line
-          (format "%s %s (%s)"
-                  (mxtodo--render-is-completed (mxtodo-item-is-completed todo))
+          (format "%s %s%s"
+                  (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
-                  (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
+                  (mxtodo--due-date-str todo))))
     todo-line))
 
 (defun mxtodo--write-todo-to-file (todo)
