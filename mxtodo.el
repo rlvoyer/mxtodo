@@ -188,7 +188,8 @@
           (while todos
             (let ((todo (pop todos)))
               (insert (mxtodo--render-todo todo) "\n")))))
-      (read-only-mode))))
+      (read-only-mode))
+    (switch-to-buffer buffer-name)))
 
 (defun mxtodo--todo-completed-p (todo-text)
   "Determine if the current TODO item is completed."
