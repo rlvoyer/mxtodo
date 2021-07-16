@@ -162,35 +162,6 @@
               :is-completed is-completed
               :date-due-ts date-due))))
 
-;;;###autoload
-(defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
-  "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
-  (interactive)
-  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
-  (unless folder-path (setq folder-path mxtodo-folder-path))
-  (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
-         (temp-file-text (f-read-text temp-file-name))
-         (todos (list)))
-    (message (format "Reading TODOS from %s" temp-file-name))
-    (dolist (line (split-string temp-file-text "\n"))
-      (if (not (string= "" line))
-          (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
-    (setq todos (cl-sort
-                 (copy-tree todos)
-                 'ts>
-                 :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
-    (with-current-buffer (get-buffer-create buffer-name)
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (text-mode)
-        (save-excursion
-          (goto-char (point-min))
-          (while todos
-            (let ((todo (pop todos)))
-              (insert (mxtodo--render-todo todo) "\n")))))
-      (read-only-mode))
-    (switch-to-buffer buffer-name)))
-
 (defun mxtodo--todo-completed-p (todo-text)
   "Determine if the current TODO item is completed."
   (not (null (string-match-p "^- \\[x\\]" todo-text))))
@@ -253,6 +224,41 @@
     (kill-buffer)))
 
 ;;;###autoload
+(define-derived-mode mxtodo-mode text-mode "Mxtodo"
+  "Major mode for managing Markdown TODO items."
+  :group 'mxtodo)
+
+;;;###autoload
+(defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
+  "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (unless folder-path (setq folder-path mxtodo-folder-path))
+  (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
+         (temp-file-text (f-read-text temp-file-name))
+         (todos (list)))
+    (message (format "Reading TODOS from %s" temp-file-name))
+    (dolist (line (split-string temp-file-text "\n"))
+      (if (not (string= "" line))
+          (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
+    (setq todos (cl-sort
+                 (copy-tree todos)
+                 'ts>
+                 :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
+    (with-current-buffer (get-buffer-create buffer-name)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (text-mode)
+        (save-excursion
+          (goto-char (point-min))
+          (while todos
+            (let ((todo (pop todos)))
+              (insert (mxtodo--render-todo todo) "\n")))))
+      (read-only-mode))
+    (switch-to-buffer buffer-name)
+    (mxtodo-mode)))
+
+;;;###autoload
 (defun mxtodo-toggle-current-todo-completed (&optional buffer-name)
   "Toggle the `completed` value of the TODO at point."
   (interactive)
@@ -262,7 +268,10 @@
       (mxtodo--write-todo-to-file todo)))
   nil)
 
-;;(define-key map (kbd "g") 'mxtodo-make-todo-buffer)
+(define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
+(define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
+(define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
+(define-key mxtodo-mode-map (kbd "?") #'describe-mode)
 
 (provide 'mxtodo)
 
