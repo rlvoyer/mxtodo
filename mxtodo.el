@@ -118,21 +118,46 @@
   "Render a checkbox indicating whether TODO is completed."
   (if (mxtodo-item-is-completed todo) "- [x]" "- [ ]"))
 
+(defface mxtodo--completed-face
+  '((t
+     :foreground "#6F6F6F"
+     :strike-through t
+     ))
+  "Face for completed TODO items."
+  :group 'mxtodo)
+
+(defun mxtodo--prettify-text (todo todo-str start-pos end-pos)
+  "Add properties to string TODO-STR."
+  (if (mxtodo-item-is-completed todo)
+      (progn
+        (add-text-properties start-pos end-pos '(face mxtodo--completed-face) todo-str)
+        todo-str)
+    todo-str))
+
+(defun mxtodo--visible-text (todo)
+  "Construct the visible text portion of TODO text."
+  (if (mxtodo-item-is-completed todo)
+      (format "%s %s"
+              (mxtodo--render-is-completed todo)
+              (mxtodo-item-text todo))
+    (format "%s %s (%s / %s)"
+            (mxtodo--render-is-completed todo)
+            (mxtodo-item-text todo)
+            (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
+            (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
+
 (defun mxtodo--render-todo (todo)
   "Render a TODO as a string. This string includes an invisible portion."
-  (let* ((visible-text
-          (format "%s %s (%s / %s)"
-                  (mxtodo--render-is-completed todo)
-                  (mxtodo-item-text todo)
-                  (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
-                  (mxtodo--render-due-date (mxtodo-item-date-due-ts todo))))
+  (let* ((visible-text (mxtodo--visible-text todo))
          (invisible-text (prin1-to-string todo))
          (line-text (format "%s\t%s" visible-text invisible-text))
          (invisible-start-pos (length visible-text))
-         (invisible-end-pos (length line-text)))
+         (invisible-end-pos (length line-text))
+         (todo-text-start-pos 6)
+         (todo-text-end-pos (+ todo-text-start-pos (length (mxtodo-item-text todo)))))
     (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
     (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
-    line-text))
+    (mxtodo--prettify-text todo line-text todo-text-start-pos todo-text-end-pos)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
   "Extract a 3-element vector containing an is-completed bool, the TODO text, and a due date from a string of the form `- [ ] do something useful (due 2021-7-2)`."
