@@ -106,57 +106,64 @@
          (actual (todo-text-no-properties (mxtodo--render-todo input-todo))))
     (should (equal expected actual))))
 
-(defun generate-todo-file (directory)
-  "Generate a test test todo file in DIRECTORY."
-  (let* ((year 2021)
-         (month (1+ (random 12)))
-         (day (1+ (random 31)))
-         (date-str (format "%d-%d-%d" year month day))
-         (filename (format "%s.md" date-str))
-         (todo-file (concat (file-name-as-directory directory) filename)))
-    (with-current-buffer (find-file-noselect todo-file t t)
-      (dotimes (i (random 10))
-        (let* ((is-completed (equal (random 2) 1))
-               (x-or-empty (if is-completed "x" "")))
-          (insert (format "- [%s] do thing %d" x-or-empty i)))
-        (insert "\n"))
-      (save-buffer)
-      (kill-buffer))))
+(defun nshuffle (sequence)
+  "Shuffle SEQUENCE."
+  (cl-loop for i from (length sequence) downto 2
+           do (cl-rotatef (elt sequence (random i))
+                          (elt sequence (1- i))))
+  sequence)
 
-(defun setup-test-data (directory)
-  "Create temp directory DIRECTORY with 5 todo files."
-  (dotimes (_ 5)
-    (generate-todo-file directory)))
-
-(defun read-todos-from-buffer (buffer-name)
-  "Read each todo from buffer named BUFFER-NAME and construct a mxtodo-item from each line, returning a list."
-  (with-current-buffer buffer-name
-    (save-excursion
-      (let ((todos (list)))
-        (goto-char (point-min))
-        (while (not (eobp))
-          (let ((todo (mxtodo--read-todo-from-line)))
-            (setq todos (cons todo todos)))
-          (forward-line 1))
-        (reverse todos)))))
-
-(defun sort-todos (todos)
-  "Sort the list of specified TODOS."
-  (let ((sorted (cl-sort
-                 (copy-tree todos)
-                 'ts>
-                 :key (lambda (x) (mxtodo-item-file-display-date-ts x)))))
-    sorted))
-
-(ert-deftest test-buffer-is-sorted-by-create-date ()
-  "Tests that the TODO buffer is sorted by create date by default."
-  (with-temp-buffer
-    (setup-test-data (temporary-file-directory))
-    (mxtodo-make-todo-buffer (current-buffer) (temporary-file-directory))
-    (let* ((todos (read-todos-from-buffer (current-buffer)))
-           (todos-sorted (sort-todos todos))
-           (todos-display-dates (mapcar 'mxtodo-item-file-display-date-ts todos))
-           (todos-display-dates-sorted (mapcar 'mxtodo-item-file-display-date-ts todos-sorted))
-           (actual todos-display-dates)
-           (expected todos-display-dates-sorted))
-      (should (equal expected actual)))))
+(ert-deftest test-sorting-todos ()
+  "Tests that a list of todos is correctly sorted."
+  (let* ((completed-todo-1
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-17.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 7
+                                                           :day 17
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "do thing 1"
+                            :is-completed t))
+         (incomplete-todo-1
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-10.md"
+                            :file-line-number 11
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 7
+                                                           :day 10
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "do thing 2"
+                            :is-completed nil))
+         (completed-todo-2
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-11.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 7
+                                                           :day 11
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "do thing 3"
+                            :is-completed t))
+         (incomplete-todo-2
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-11.md"
+                            :file-line-number 11
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 7
+                                                           :day 11
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "do thing 4"
+                            :is-completed nil))
+         (todos (nshuffle (list completed-todo-1 incomplete-todo-1 completed-todo-2 incomplete-todo-2)))
+         (expected (list incomplete-todo-2 incomplete-todo-1 completed-todo-1 completed-todo-2))
+         (actual (mxtodo--sort-todos todos)))
+    (should (equal expected actual))))

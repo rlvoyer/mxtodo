@@ -4,7 +4,7 @@
 
 ;; Author: Robert Voyer <robert.voyer@gmail.com>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "26.1") (f "0.20.0") (ts "0.2"))
+;; Package-Requires: ((emacs "26.1") (dash "2.19.0") (f "0.20.0") (ts "0.2"))
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
 
@@ -26,6 +26,7 @@
 
 ;;; Code:
 
+(require 'dash)
 (require 'f)
 (require 'ts)
 
@@ -253,6 +254,17 @@
   "Major mode for managing Markdown TODO items."
   :group 'mxtodo)
 
+(defun mxtodo--sort-todos (todos)
+  "Sort TODOS, a list of todo items.
+
+TODOS are sorted by creation date and partitioned by completion status,
+with incomplete todo items first, followed by completed todo items."
+  (let* ((todos-sorted
+          (cl-sort (copy-tree todos) 'ts> :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
+         (todos-separated
+          (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos-sorted)))
+    (-flatten todos-separated)))
+
 ;;;###autoload
 (defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
   "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
@@ -266,10 +278,7 @@
     (dolist (line (split-string temp-file-text "\n"))
       (if (not (string= "" line))
           (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
-    (setq todos (cl-sort
-                 (copy-tree todos)
-                 'ts>
-                 :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
+    (setq todos (mxtodo--sort-todos todos))
     (with-current-buffer (get-buffer-create buffer-name)
       (let ((inhibit-read-only t))
         (erase-buffer)
