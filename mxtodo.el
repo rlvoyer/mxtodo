@@ -241,7 +241,7 @@
 
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
-  (with-current-buffer (find-file-noselect (mxtodo-item-file-path todo) t t)
+  (with-current-buffer (find-file-noselect (mxtodo-item-file-path todo) t nil)
     (goto-char (point-min))
     (forward-line (1- (mxtodo-item-file-line-number todo)))
     (mxtodo--delete-current-line)
