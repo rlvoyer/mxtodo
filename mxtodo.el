@@ -29,6 +29,7 @@
 (require 'dash)
 (require 'f)
 (require 'ts)
+(require 'xref)
 
 (defgroup mxtodo nil
   "mxtodo Markdown TODO manager."
