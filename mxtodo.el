@@ -265,6 +265,24 @@ with incomplete todo items first, followed by completed todo items."
           (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos-sorted)))
     (-flatten todos-separated)))
 
+(defun mxtodo--make-todo-xref (todo)
+  "Make an xref from TODO."
+  (let* ((file (mxtodo-item-file-path todo))
+         (line (mxtodo-item-file-line-number todo))
+         (column 0)
+         (location (xref-make-file-location file line column)))
+    (xref-make "Source of todo" location)))
+
+;;;###autoload
+(defun mxtodo-jump-to-current-todo-source (&optional buffer-name)
+  "Goto the source of TODO on the current line."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
+    (let* ((todo (mxtodo--read-todo-from-line))
+           (todo-xref (mxtodo--make-todo-xref todo)))
+      (xref-pop-to-location todo-xref))))
+
 ;;;###autoload
 (defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
   "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
@@ -306,6 +324,7 @@ with incomplete todo items first, followed by completed todo items."
 (define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
 (define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
 (define-key mxtodo-mode-map (kbd "?") #'describe-mode)
+(define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)
 
