@@ -198,9 +198,7 @@
   (progn
     (setf
      (mxtodo-item-is-completed todo)
-     (not
-      (mxtodo--todo-completed-p
-       (mxtodo-item-text todo))))
+     (not (mxtodo-item-is-completed todo)))
     todo))
 
 (defun mxtodo--find-invisible-region-in-line ()
