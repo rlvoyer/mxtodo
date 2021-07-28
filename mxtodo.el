@@ -189,10 +189,6 @@
               :is-completed is-completed
               :date-due-ts date-due))))
 
-(defun mxtodo--todo-completed-p (todo-text)
-  "Determine if the current TODO item is completed."
-  (not (null (string-match-p "^- \\[x\\]" todo-text))))
-
 (defun mxtodo--toggle-todo-completed (todo)
   "Toggle a TODO's is-completed field."
   (progn
@@ -291,7 +287,6 @@ with incomplete todo items first, followed by completed todo items."
   (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
          (temp-file-text (f-read-text temp-file-name))
          (todos (list)))
-    (message (format "Reading TODOS from %s" temp-file-name))
     (dolist (line (split-string temp-file-text "\n"))
       (if (not (string= "" line))
           (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
@@ -316,7 +311,9 @@ with incomplete todo items first, followed by completed todo items."
   (unless buffer-name (setq buffer-name mxtodo-buffer-name))
   (with-current-buffer buffer-name
     (let ((todo (mxtodo--toggle-todo-completed (mxtodo--read-todo-from-line))))
-      (mxtodo--write-todo-to-file todo)))
+      (progn
+        (mxtodo--write-todo-to-file todo)
+        (mxtodo-make-todo-buffer buffer-name))))
   nil)
 
 (define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
