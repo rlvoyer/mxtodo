@@ -104,18 +104,25 @@
       (ts-format "%Y-%-m-%-d" date)
     ""))
 
+(defface mxtodo--due-date-face
+  '((t
+     :foreground "#DFAF8F"
+     :weight bold
+     ))
+  "Face for due dates."
+  :group 'mxtodo)
+
 (defun mxtodo--render-due-date (date)
   "Render a TODO due date as a string."
   (if (not (equal date nil))
-      (format "due %s" (mxtodo--render-date date))
+      (let* ((due-date-str (format " // due %s" (mxtodo--render-date date)))
+             (start-pos 0)
+             (end-pos (length due-date-str)))
+        (progn
+          (add-text-properties start-pos end-pos '(face mxtodo--due-date-face) due-date-str)
+          due-date-str))
     ""))
   
-(defun mxtodo--render-create-date (date)
-  "Render a TODO create date as a string."
-  (if (not (equal date nil))
-      (format "created %s" (mxtodo--render-date date))
-    ""))
-
 (defun mxtodo--render-is-completed (todo)
   "Render a checkbox indicating whether TODO is completed."
   (if (mxtodo-item-is-completed todo) "- [x]" "- [ ]"))
@@ -142,10 +149,9 @@
       (format "%s %s"
               (mxtodo--render-is-completed todo)
               (mxtodo-item-text todo))
-    (format "%s %s (%s / %s)"
+    (format "%s %s%s"
             (mxtodo--render-is-completed todo)
             (mxtodo-item-text todo)
-            (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
             (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
 
 (defun mxtodo--render-todo (todo)
@@ -157,7 +163,6 @@
          (invisible-end-pos (length line-text))
          (todo-text-start-pos 6)
          (todo-text-end-pos (+ todo-text-start-pos (length (mxtodo-item-text todo)))))
-    (mxtodo--render-create-date (mxtodo-item-file-display-date-ts todo))
     (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
     (mxtodo--prettify-text todo line-text todo-text-start-pos todo-text-end-pos)))
 

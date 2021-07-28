@@ -88,7 +88,7 @@
          (actual (mxtodo--render-date date)))
     (should (equal expected actual))))
 
-(ert-deftest test-render-todo ()
+(ert-deftest test-render-todo-no-due-date ()
   "Tests that a TODO renders correctly."
   (let* ((input-todo
           (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
@@ -102,9 +102,34 @@
                             :file-last-update-ts (make-ts :unix 1624637870)
                             :text "write some unit tests"
                             :is-completed nil))
-         (expected "- [ ] write some unit tests (created 2021-6-24 / )")
+         (expected "- [ ] write some unit tests")
          (actual (todo-text-no-properties (mxtodo--render-todo input-todo))))
     (should (equal expected actual))))
+
+(ert-deftest test-render-todo-with-due-date ()
+  "Tests that a TODO renders correctly."
+  (let* ((input-todo
+          (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 6
+                                                           :day 24
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :date-due-ts (make-ts :year 2021
+                                                  :month 7
+                                                  :day 1
+                                                  :hour 0
+                                                  :minute 0
+                                                  :second 0)
+                            :file-last-update-ts (make-ts :unix 1624637870)
+                            :text "write some unit tests"
+                            :is-completed nil))
+         (expected "- [ ] write some unit tests // due 2021-7-1")
+         (actual (todo-text-no-properties (mxtodo--render-todo input-todo))))
+    (should (equal expected actual))))
+
 
 (defun nshuffle (sequence)
   "Shuffle SEQUENCE."
