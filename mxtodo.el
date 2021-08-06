@@ -48,6 +48,9 @@
 (defconst mxtodo-buffer-name "*todo-list*"
   "The name of the TODO search results buffer.")
 
+(defvar mxtodo-hide-completed nil
+  "Whether to hide completed TODO items.")
+
 (cl-defstruct mxtodo-item
   "A data struct for TODO information."
   (file-path nil :readonly t :type string)
@@ -310,7 +313,8 @@ with incomplete todo items first, followed by completed todo items."
           (goto-char (point-min))
           (while todos
             (let ((todo (pop todos)))
-              (insert (mxtodo--render-todo todo) "\n")))))
+              (if (not (and mxtodo-hide-completed (mxtodo-item-is-completed todo)))
+                  (insert (mxtodo--render-todo todo) "\n"))))))
       (read-only-mode))
     (switch-to-buffer buffer-name)
     (mxtodo-mode)))
@@ -398,11 +402,25 @@ with incomplete todo items first, followed by completed todo items."
   (let ((file-name (mxtodo-create-daily-note)))
     (find-file file-name)))
 
+;;;###autoload
+(defun mxtodo-toggle-hide-completed (&optional buffer-name)
+  "Toggle the global variable `mxtodo-hide-completed'."
+  (interactive)
+  (progn
+    (unless buffer-name
+      (setq buffer-name mxtodo-buffer-name))
+    (if mxtodo-hide-completed
+        (setq mxtodo-hide-completed nil)
+      (setq mxtodo-hide-completed t))
+    (mxtodo-make-todo-buffer buffer-name)
+    mxtodo-hide-completed))
+
 (define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
 (define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
 (define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
 (define-key mxtodo-mode-map (kbd "?") #'describe-mode)
 (define-key mxtodo-mode-map (kbd "+") #'mxtodo-create-todo)
+(define-key mxtodo-mode-map (kbd "H") #'mxtodo-toggle-hide-completed)
 (define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)
