@@ -241,13 +241,19 @@
 
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
-  (with-current-buffer (find-file-noselect (mxtodo-item-file-path todo) t nil)
-    (goto-char (point-min))
-    (forward-line (1- (mxtodo-item-file-line-number todo)))
-    (mxtodo--delete-current-line)
-    (insert (mxtodo--todo-str todo) "\n")
-    (save-buffer)
-    (kill-buffer)))
+  (let (todo-file-buffer-name)
+    (progn
+      (save-excursion
+        (progn
+          (find-file (mxtodo-item-file-path todo))
+          (setq todo-file-buffer-name (buffer-name))
+          (goto-char (point-min))
+          (forward-line (1- (mxtodo-item-file-line-number todo)))
+          (mxtodo--delete-current-line)
+          (insert (mxtodo--todo-str todo) "\n")
+          (save-buffer)))
+      (if (not (string= todo-file-buffer-name (buffer-name)))
+          (kill-buffer todo-file-buffer-name)))))
 
 ;;;###autoload
 (define-derived-mode mxtodo-mode text-mode "Mxtodo"
@@ -321,10 +327,82 @@ with incomplete todo items first, followed by completed todo items."
         (mxtodo-make-todo-buffer buffer-name))))
   nil)
 
+(defun mxtodo--daily-note-filename ()
+  "Get the path to today's daily note file."
+  (let* ((todays-date-str (ts-format "%Y-%-m-%-d" (ts-now)))
+         (buffer-name (concat todays-date-str ".md"))
+         (file-name (concat (expand-file-name (file-name-as-directory mxtodo-folder-path)) buffer-name)))
+    file-name))
+
+;;;###autoload
+(defun mxtodo-create-daily-note ()
+  "Create a new Markdown notes file for today."
+  (interactive)
+  (let* ((file-name (mxtodo--daily-note-filename))
+         (todays-date-str (ts-format "%Y-%-m-%-d" (ts-now))))
+    (progn
+      (find-file file-name)
+      (if (eq (buffer-size) 0)
+          (progn
+            (insert (concat "# " todays-date-str))
+            (end-of-line)
+            (open-line 1)))
+      (save-buffer)
+      file-name)))
+
+(defun mxtodo--current-line-empty-p ()
+  (save-excursion
+    (beginning-of-line)
+    (looking-at-p "[[:space:]]*$")))
+
+;;;###autoload
+(defun mxtodo-create-todo (&optional buffer-name todo-text due-date-ts)
+  "Add a TODO to today's daily note."
+  (interactive)
+  (save-excursion
+    (progn
+      (unless buffer-name
+        (setq buffer-name mxtodo-buffer-name))
+      (unless todo-text
+        (setq todo-text (read-string "Enter the TODO text: ")))
+      (unless due-date-ts
+        (let ((due-date-read (read-string "(Optional) Enter a due date: ")))
+          (if (not (string= "" due-date-read))
+              (setq due-date-ts (ts-parse-fill 'begin due-date-read))
+            (setq due-date-ts nil))))
+      (let ((file-name (mxtodo-create-daily-note)))
+        (progn
+          (goto-char (point-max))
+          (if (not (mxtodo--current-line-empty-p))
+              (progn
+                (end-of-line)
+                (open-line 1)
+                (goto-char (point-max))))
+          (let ((todo (make-mxtodo-item
+                       :file-path file-name
+                       :file-line-number (1+ (string-to-number (format-mode-line "%l")))
+                       :file-display-date-ts (ts-now)
+                       :file-last-update-ts (ts-now)
+                       :date-due-ts due-date-ts
+                       :text todo-text
+                       :is-completed nil)))
+            (progn
+              (newline)
+              (mxtodo--write-todo-to-file todo)))))
+      (mxtodo-make-todo-buffer buffer-name))))
+
+;;;###autoload
+(defun mxtodo-today ()
+  "Open today's daily note and make it the current buffer."
+  (interactive)
+  (let ((file-name (mxtodo-create-daily-note)))
+    (find-file file-name)))
+
 (define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
 (define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
 (define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
 (define-key mxtodo-mode-map (kbd "?") #'describe-mode)
+(define-key mxtodo-mode-map (kbd "+") #'mxtodo-create-todo)
 (define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)
