@@ -3,7 +3,7 @@
 ;; Copyright (C) 2021 Robert Voyer.
 
 ;; Author: Robert Voyer <robert.voyer@gmail.com>
-;; Version: 0.1
+;; Version: 0.1.0
 ;; Package-Requires: ((emacs "26.1") (dash "2.19.0") (f "0.20.0") (ts "0.2"))
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
@@ -359,9 +359,17 @@ with incomplete todo items first, followed by completed todo items."
     (beginning-of-line)
     (looking-at-p "[[:space:]]*$")))
 
+(defun mxtodo--parse-date (date-str)
+  "Parse the specified date string into a ts or return an error if it failed to parse."
+  (condition-case
+      nil
+      (cl-values (ts-parse-fill 'begin date-str) nil)
+    (error
+     (cl-values nil (format "Unable to parse specified date string %s; date must be ISO-8601-formatted." date-str)))))
+
 ;;;###autoload
 (defun mxtodo-create-todo (&optional buffer-name todo-text due-date-ts)
-  "Add a TODO to today's daily note."
+  "Add a todo to today's daily note, updating todo buffer with name BUFFER-NAME."
   (interactive)
   (save-excursion
     (progn
@@ -372,8 +380,10 @@ with incomplete todo items first, followed by completed todo items."
       (unless due-date-ts
         (let ((due-date-read (read-string "(Optional) Enter a due date: ")))
           (if (not (string= "" due-date-read))
-              (setq due-date-ts (ts-parse-fill 'begin due-date-read))
-            (setq due-date-ts nil))))
+              (-let [(due-date-parsed err) (mxtodo--parse-date due-date-read)]
+                (if (not (equal err nil))
+                    (error err)
+                  (setq due-date-ts due-date-parsed))))))
       (let ((file-name (mxtodo-create-daily-note)))
         (progn
           (goto-char (point-max))
