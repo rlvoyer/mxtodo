@@ -25,10 +25,6 @@ jobs:
 
         allow_failures: [false]
 
-        include:
-          - emacs_version: snapshot
-            allow_failures: true
-
     steps:
     - name: Set up Emacs
       uses: purcell/setup-emacs@master
