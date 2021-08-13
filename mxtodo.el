@@ -21,8 +21,8 @@
 
 ;;; Commentary:
 
-;; This package provides a TODO buffer and buffer-local functionality for managing TODOs in
-;; Markdown notes files.
+;; This package provides a TODO buffer and associated functionality for managing TODOs in Markdown
+;; notes files.
 
 ;;; Code:
 
@@ -242,6 +242,13 @@
                   (mxtodo--due-date-str todo))))
     todo-line))
 
+(defun mxtodo--todo-is-fresh-p (todo)
+  "Check that TODO file has not been updated since last read."
+  (let ((file-path (mxtodo-item-file-path todo)))
+    (time-equal-p
+     (mxtodo-item-file-last-update-ts todo)
+     (file-attributes-modification-time file-attributes))))
+
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
   (let (todo-file-buffer-name)
@@ -249,6 +256,7 @@
       (save-excursion
         (progn
           (find-file (mxtodo-item-file-path todo))
+          (file-attributes-modification-time)
           (setq todo-file-buffer-name (buffer-name))
           (goto-char (point-min))
           (forward-line (1- (mxtodo-item-file-line-number todo)))
