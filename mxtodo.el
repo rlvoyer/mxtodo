@@ -243,12 +243,12 @@
     todo-line))
 
 (defun mxtodo--todo-is-fresh-p (todo)
-  "Check that TODO file has not been updated since last read."
+  "Check that TODO note file has not been updated since last read."
   (let* ((file-path (mxtodo-item-file-path todo))
          (file-last-modified (float-time (file-attribute-modification-time (file-attributes file-path)))))
     (time-equal-p
      (ts-unix (mxtodo-item-file-last-update-ts todo))
-     (float-time file-last-modified))))
+     (truncate (float-time file-last-modified)))))
 
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
