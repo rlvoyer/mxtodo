@@ -217,3 +217,101 @@
          (expected (list incomplete-todo-2 incomplete-todo-1 completed-todo-1 completed-todo-2))
          (actual (mxtodo--sort-todos todos)))
     (should (equal expected actual))))
+
+(defun make-test-notes-dir (&optional dir-prefix)
+  "Create a temporary test directory for todo note files."
+  (progn
+    (unless dir-prefix
+      (setq dir-prefix "notes"))
+    (make-temp-file dir-prefix t)))
+
+(defun random-date-str ()
+  "Generate a random date string."
+  (let ((day-of-month (1+ (random 30)))
+        (month-of-year (1+ (random 12)))
+        (year 2021))
+    (format "%d-%02d-%02d" year month-of-year day-of-month)))
+
+(defun make-todo-str (&optional text is-completed idx)
+  "Make a test todo string."
+  (progn
+    (unless idx
+      (setq idx (random)))
+    (unless text
+      (setq text (format "do thing %s" idx)))
+    (unless is-completed
+      (setq is-completed (equal (% (random 10) 2) 0)))
+    (let ((checkbox (if is-completed "[x]" "[ ]")))
+      (format "- %s %s" checkbox text))))
+
+(defun make-test-notes-file (dir &optional num-todos date-str file-ext)
+  "Create a temporary notes file for testing."
+  (progn
+    (unless date-str
+      (setq date-str (random-date-str)))
+    (unless file-ext
+      (setq file-ext ".md"))
+    (unless num-todos
+      (setq num-todos 1))
+    (let ((file-path (concat (file-name-as-directory dir) (format "%s%s" date-str file-ext))))
+      (with-temp-file file-path
+        (progn
+          (dotimes (i num-todos)
+            (insert (concat (make-todo-str) "\n")))
+          file-path)))))
+
+(defun parse-todo-from-string (todo-line file-path file-line-number)
+  "Read a single todo from a string."
+  (if (string-match "^- \\[\\(x\\|[[:blank:]]\\)\\] \\(.*?\\)\\(?: (due \\(.*\\))\\)?$" todo-line)
+      (let* ((file-display-date (file-name-base file-path))
+             (completed-text (match-string 1 todo-line))
+             (todo-text (match-string 2 todo-line))
+             (is-completed (equal completed-text "x"))
+             (due-date (mxtodo--ts-date-from-string (match-string 3 todo-line)))
+             (file-last-updated (float-time (file-attribute-modification-time (file-attributes file-path))))
+             (todo-item
+              (make-mxtodo-item
+               :file-path file-path
+               :file-line-number 1
+               :file-display-date-ts (mxtodo--ts-date-from-string file-display-date)
+               :file-last-update-ts (make-ts :unix file-last-updated)
+               :text todo-text
+               :is-completed nil)))
+        (cl-values todo-item nil))
+    (cl-values nil "unable to parse")))
+
+(defun read-test-notes-file (notes-file)
+  "Read a NOTES-FILE and return a list of todo items ignoring empty lines."
+  (-map-indexed
+   (lambda
+     (line-no line)
+     (-let [(todo err) (parse-todo-from-string line notes-file (1+ line-no))]
+       (if (not (equal err nil))
+           (error err)
+         todo)))
+   (-filter
+    (lambda (line) (not (string= line "")))
+    (split-string (f-read-text notes-file) "\n"))))
+
+(ert-deftest test-todo-is-fresh ()
+  "Test that todo is fresh when underlying file hasn't been modified since last read."
+  (let* ((notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todos (read-test-notes-file notes-file))
+         (todo (car todos))
+         (expected t)
+         (actual (mxtodo--todo-is-fresh-p todo)))
+    (should (equal expected actual))))
+
+(ert-deftest test-todo-is-stale ()
+  "Test that todo is stale when underlying file has been modified since last read."
+  (let* ((notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todos (read-test-notes-file notes-file))
+         (_ (set-file-times notes-file))
+         (todo (car todos))
+         (expected nil)
+         (actual (mxtodo--todo-is-fresh-p todo)))
+    (progn
+      (set-file-times notes-file)
+      (should (equal expected actual)))))

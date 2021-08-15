@@ -180,7 +180,7 @@
     (vector todo-line nil nil)))
 
 (defun mxtodo--make-todo-from-temp-file-line (line)
-  "Parse a TODO temp file line and construct a todo-item."
+  "Parse a todo temp file line and construct a todo-item."
   (let* ((parts (split-string line "\t"))
          (file-path (pop parts))
          (file-line-number (string-to-number (pop parts)))
@@ -198,7 +198,7 @@
               :date-due-ts date-due))))
 
 (defun mxtodo--toggle-todo-completed (todo)
-  "Toggle a TODO's is-completed field."
+  "Toggle TODO's is-completed field."
   (progn
     (setf
      (mxtodo-item-is-completed todo)
@@ -244,25 +244,27 @@
 
 (defun mxtodo--todo-is-fresh-p (todo)
   "Check that TODO file has not been updated since last read."
-  (let ((file-path (mxtodo-item-file-path todo)))
+  (let* ((file-path (mxtodo-item-file-path todo))
+         (file-last-modified (float-time (file-attribute-modification-time (file-attributes file-path)))))
     (time-equal-p
-     (mxtodo-item-file-last-update-ts todo)
-     (file-attributes-modification-time file-attributes))))
+     (ts-unix (mxtodo-item-file-last-update-ts todo))
+     (float-time file-last-modified))))
 
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
-  (let (todo-file-buffer-name)
+  (let ((todo-file-buffer-name))
     (progn
-      (save-excursion
-        (progn
-          (find-file (mxtodo-item-file-path todo))
-          (file-attributes-modification-time)
-          (setq todo-file-buffer-name (buffer-name))
-          (goto-char (point-min))
-          (forward-line (1- (mxtodo-item-file-line-number todo)))
-          (mxtodo--delete-current-line)
-          (insert (mxtodo--todo-str todo) "\n")
-          (save-buffer)))
+      (let ((todo-file-path (mxtodo-item-file-path todo)))
+        (if (mxtodo--todo-is-fresh-p todo)
+            (save-excursion
+              (progn
+                (find-file todo-file-path)
+                (goto-char (point-min))
+                (forward-line (1- (mxtodo-item-file-line-number todo)))
+                (mxtodo--delete-current-line)
+                (insert (mxtodo--todo-str todo) "\n")
+                (save-buffer)))
+          (error "the file containing TODO has been modified since the last read; refresh the todo buffer.")))
       (if (not (string= todo-file-buffer-name (buffer-name)))
           (kill-buffer todo-file-buffer-name)))))
 
@@ -292,7 +294,7 @@ with incomplete todo items first, followed by completed todo items."
 
 ;;;###autoload
 (defun mxtodo-jump-to-current-todo-source (&optional buffer-name)
-  "Goto the source of TODO on the current line."
+  "Goto the source of the todo item on the current line."
   (interactive)
   (unless buffer-name (setq buffer-name mxtodo-buffer-name))
   (with-current-buffer buffer-name
@@ -302,7 +304,7 @@ with incomplete todo items first, followed by completed todo items."
 
 ;;;###autoload
 (defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
-  "Construct a read-only buffer where each-line corresponds to a TODO item from `todo-items`."
+  "Construct a read-only buffer BUFFER-NAME where each line corresponds to a todo from notes in FOLDER-PATH."
   (interactive)
   (unless buffer-name (setq buffer-name mxtodo-buffer-name))
   (unless folder-path (setq folder-path mxtodo-folder-path))
