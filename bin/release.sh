@@ -6,7 +6,7 @@ realpath() {
     [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
 
-HERE=$(realpath "$0")
+HERE=$(dirname $(realpath "$0"))
 
 usage() {
     cat >&2 <<EOS
