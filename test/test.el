@@ -317,3 +317,19 @@
     (progn
       (set-file-times notes-file)
       (should (equal expected actual)))))
+
+(ert-deftest test-adding-a-todo-works-for-a-new-notefile ()
+  "Test that adding a todo works on a fresh daily notefile."
+  (let* ((notes-dir (make-test-notes-dir))
+         (todo-text "Water the garden")
+         (due-date (ts-adjust 'day +7 (ts-now))))
+    (should (not (equal (mxtodo-create-todo notes-dir nil nil todo-text due-date) nil)))))
+
+(ert-deftest test-adding-a-todo-works-for-an-existing-notefile ()
+  "Test that adding a todo works on a fresh daily notefile."
+  (let* ((notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todo-text "Take out the garbage")
+         (due-date (ts-adjust 'day +7 (ts-now))))
+    (should (not (equal (mxtodo-create-todo notes-dir nil notes-file todo-text due-date) nil)))))
+

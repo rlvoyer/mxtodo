@@ -67,16 +67,12 @@ while [[ $# -gt 0 ]]; do
             exit 1;;
         -v|--version)
             VERSION="$2"
-            shift # past argument
-            shift # past value
+            shift
+            shift
             ;;
-        --default)
-            DEFAULT=YES
-            shift # past argument
-            ;;
-        *)        # unknown option
+        *)                     # unknown option
             POSITIONAL+=("$1") # save it in an array for later
-            shift # past argument
+            shift
             ;;
     esac
 done

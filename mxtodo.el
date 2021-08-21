@@ -345,18 +345,19 @@ with incomplete todo items first, followed by completed todo items."
         (mxtodo-make-todo-buffer buffer-name))))
   nil)
 
-(defun mxtodo--daily-note-filename ()
+(defun mxtodo--daily-note-filename (&optional folder-path)
   "Get the path to today's daily note file."
+  (unless folder-path (setq folder-path mxtodo-folder-path))
   (let* ((todays-date-str (ts-format "%Y-%-m-%-d" (ts-now)))
          (buffer-name (concat todays-date-str ".md"))
-         (file-name (concat (expand-file-name (file-name-as-directory mxtodo-folder-path)) buffer-name)))
+         (file-name (concat (expand-file-name (file-name-as-directory folder-path)) buffer-name)))
     file-name))
 
 ;;;###autoload
-(defun mxtodo-create-daily-note ()
+(defun mxtodo-create-daily-note (&optional folder-path)
   "Create a new Markdown notes file for today."
   (interactive)
-  (let* ((file-name (mxtodo--daily-note-filename))
+  (let* ((file-name (mxtodo--daily-note-filename folder-path))
          (todays-date-str (ts-format "%Y-%-m-%-d" (ts-now))))
     (progn
       (find-file file-name)
@@ -382,11 +383,13 @@ with incomplete todo items first, followed by completed todo items."
      (cl-values nil (format "Unable to parse specified date string %s; date must be ISO-8601-formatted." date-str)))))
 
 ;;;###autoload
-(defun mxtodo-create-todo (&optional buffer-name todo-text due-date-ts)
+(defun mxtodo-create-todo (&optional folder-path file-name buffer-name todo-text due-date-ts)
   "Add a todo to today's daily note, updating todo buffer with name BUFFER-NAME."
   (interactive)
   (save-excursion
     (progn
+      (unless file-name
+        (setq file-name (mxtodo-create-daily-note folder-path)))
       (unless buffer-name
         (setq buffer-name mxtodo-buffer-name))
       (unless todo-text
@@ -398,26 +401,27 @@ with incomplete todo items first, followed by completed todo items."
                 (if (not (equal err nil))
                     (error err)
                   (setq due-date-ts due-date-parsed))))))
-      (let ((file-name (mxtodo-create-daily-note)))
-        (progn
-          (goto-char (point-max))
-          (if (not (mxtodo--current-line-empty-p))
-              (progn
-                (end-of-line)
-                (open-line 1)
-                (goto-char (point-max))))
-          (let ((todo (make-mxtodo-item
-                       :file-path file-name
-                       :file-line-number (1+ (string-to-number (format-mode-line "%l")))
-                       :file-display-date-ts (ts-now)
-                       :file-last-update (current-time)
-                       :date-due-ts due-date-ts
-                       :text todo-text
-                       :is-completed nil)))
+      (progn
+        (goto-char (point-max))
+        (if (not (mxtodo--current-line-empty-p))
             (progn
-              (newline)
-              (mxtodo--write-todo-to-file todo)))))
-      (mxtodo-make-todo-buffer buffer-name))))
+              (end-of-line)
+              (open-line 1)
+              (goto-char (point-max))))
+        (let ((todo (make-mxtodo-item
+                     :file-path file-name
+                     :file-line-number (1+ (string-to-number (format-mode-line "%l")))
+                     :file-display-date-ts (ts-now)
+                     :file-last-update (mxtodo--file-last-modified file-name)
+                     :date-due-ts due-date-ts
+                     :text todo-text
+                     :is-completed nil)))
+          (progn
+            (newline)
+            (mxtodo--write-todo-to-file todo)
+            (mxtodo-make-todo-buffer buffer-name folder-path)
+            todo))))))
+
 
 ;;;###autoload
 (defun mxtodo-today ()
