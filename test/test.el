@@ -77,7 +77,7 @@
                                                            :hour 0
                                                            :minute 0
                                                            :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "write some unit tests"
                             :is-completed nil))
          (expected "- [ ] write some unit tests")
@@ -101,7 +101,7 @@
                                                   :hour 0
                                                   :minute 0
                                                   :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "write some unit tests"
                             :is-completed nil))
          (expected "- [ ] write some unit tests // due 2021-7-1")
@@ -176,7 +176,7 @@
                                                            :hour 0
                                                            :minute 0
                                                            :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "do thing 1"
                             :is-completed t))
          (incomplete-todo-1
@@ -188,7 +188,7 @@
                                                            :hour 0
                                                            :minute 0
                                                            :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "do thing 2"
                             :is-completed nil))
          (completed-todo-2
@@ -200,7 +200,7 @@
                                                            :hour 0
                                                            :minute 0
                                                            :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "do thing 3"
                             :is-completed t))
          (incomplete-todo-2
@@ -212,7 +212,7 @@
                                                            :hour 0
                                                            :minute 0
                                                            :second 0)
-                            :file-last-update (current-time)
+                            :file-last-update-ts (ts-now)
                             :text "do thing 4"
                             :is-completed nil))
          (todos (nshuffle (list completed-todo-1 incomplete-todo-1 completed-todo-2 incomplete-todo-2)))
@@ -275,7 +275,7 @@
                :file-path file-path
                :file-line-number file-line-number
                :file-display-date-ts (mxtodo--ts-date-from-string file-display-date)
-               :file-last-update (mxtodo--file-last-modified file-path)
+               :file-last-update-ts (mxtodo--file-last-modified file-path)
                :date-due-ts due-date
                :text todo-text
                :is-completed is-completed)))

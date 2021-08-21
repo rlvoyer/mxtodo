@@ -56,7 +56,7 @@
   (file-path nil :readonly t :type string)
   (file-line-number nil :readonly t :type integer)
   (file-display-date-ts nil :readonly t :type ts)
-  (file-last-update nil :readonly t :type list)
+  (file-last-update-ts nil :readonly t :type ts)
   (date-due-ts nil :type ts)
   (text nil :type string)
   (is-completed nil :type boolean))
@@ -180,8 +180,8 @@
     (vector todo-line nil nil)))
 
 (defun mxtodo--file-last-modified (file-path)
-  "Return the file last modified timestamp as a Lisp timestamp by inspecting the file-attributes of FILE-PATH."
-  (file-attribute-modification-time (file-attributes file-path)))
+  "Return the file last modified timestamp as a ts struct by inspecting the file-attributes of FILE-PATH."
+  (make-ts :unix (float-time (file-attribute-modification-time (file-attributes file-path)))))
 
 (defun mxtodo--make-todo-from-temp-file-line (line)
   "Parse a todo temp file line and construct a todo-item."
@@ -190,13 +190,13 @@
          (file-line-number (string-to-number (pop parts)))
          (file-display-date-ts (mxtodo--display-date-from-file-path file-path))
          (todo-text (pop parts))
-         (file-last-update (mxtodo--file-last-modified file-path)))
+         (file-last-update-ts (mxtodo--file-last-modified file-path)))
     (seq-let [todo-text is-completed date-due] (mxtodo--extract-info-from-text todo-text)
              (make-mxtodo-item
               :file-path file-path
               :file-line-number file-line-number
               :file-display-date-ts file-display-date-ts
-              :file-last-update file-last-update
+              :file-last-update-ts file-last-update-ts
               :text todo-text
               :is-completed is-completed
               :date-due-ts date-due))))
@@ -250,8 +250,8 @@
   "Check that TODO note file has not been updated since last read."
   (let ((file-path (mxtodo-item-file-path todo)))
     (progn
-      (time-equal-p
-       (mxtodo-item-file-last-update todo)
+      (ts=
+       (mxtodo-item-file-last-update-ts todo)
        (mxtodo--file-last-modified file-path)))))
 
 (defun mxtodo--write-todo-to-file (todo)
@@ -412,7 +412,7 @@ with incomplete todo items first, followed by completed todo items."
                      :file-path file-name
                      :file-line-number (1+ (string-to-number (format-mode-line "%l")))
                      :file-display-date-ts (ts-now)
-                     :file-last-update (mxtodo--file-last-modified file-name)
+                     :file-last-update-ts (mxtodo--file-last-modified file-name)
                      :date-due-ts due-date-ts
                      :text todo-text
                      :is-completed nil)))
