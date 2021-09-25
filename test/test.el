@@ -333,3 +333,12 @@
          (due-date (ts-adjust 'day +7 (ts-now))))
     (should (not (equal (mxtodo-create-todo notes-dir nil notes-file todo-text due-date) nil)))))
 
+(ert-deftest test-search-directory ()
+  "Test searching a directory."
+  (let* ((notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (actual (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]")))
+    (progn
+      (should (equal (length actual) 1))
+      (should (equal (elt (elt actual 0) 0) notes-file))
+      (should (equal (elt (elt actual 0) 1) 1)))))

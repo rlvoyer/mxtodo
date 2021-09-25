@@ -31,6 +31,27 @@
 (require 'ts)
 (require 'xref)
 
+(unless (functionp 'module-load)
+  (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
+
+;; if mxtodo-searcher.so not in same directory as load-file-name, download it
+;; URL should be a function of architecture and version, but let's assume architecture to start
+
+(defvar mxtodo--searcher-module-file-name nil
+  "The expected local file path for the mxtodo-searcher module.")
+
+(setq mxtodo--searcher-module-file-name (concat (file-name-directory load-file-name) "mxtodo-searcher.so"))
+
+(defvar mxtodo--searcher-module-url nil
+  "The URL for the searcher module.")
+
+(setq mxtodo--searcher-module-url (concat "file:" "/Users/rlvoyer/Code/mxtodo/mxtodo-searcher/mxtodo-searcher.so"))
+
+(unless (file-exists-p mxtodo--searcher-module-file-name)
+  (url-copy-file mxtodo--searcher-module-url  mxtodo--searcher-module-file-name))
+
+(require 'mxtodo-searcher)
+
 (defgroup mxtodo nil
   "mxtodo Markdown TODO manager."
   :group 'tools)
@@ -42,6 +63,11 @@
 
 (defcustom mxtodo-folder-path "~/Documents/Notes"
   "The folder where TODO files reside."
+  :type 'string
+  :group 'mxtodo)
+
+(defcustom mxtodo-pattern-str "^- ?\\[[Xx ]\\]"
+  "The PCRE regular expression pattern for matching TODO lines."
   :type 'string
   :group 'mxtodo)
 
@@ -61,25 +87,14 @@
   (text nil :type string)
   (is-completed nil :type boolean))
 
-(defun mxtodo--grep-command (folder-path)
-  "The grep command used to find TODOs."
-  (format "rg --json \"^- \\[(x|\\s)\\] (.*?)$\" %s" folder-path))
-
-(defun mxtodo--gather-todos-tmpfile (folder-path)
-  "Gather TODO items from mxtodo-folder-path and write to a temporary file."
-  (let ((tmp-file-1 (make-temp-file "results"))
-        (tmp-file-2 (make-temp-file "filetimestamps"))
-        (tmp-file-3 (make-temp-file "todos")))
-    (let ((full-command
-           (concat
-            (mxtodo--grep-command folder-path) " | "
-            (format "%s" "jq -r -c 'select(.type==\"match\")|[.data.path.text, .data.line_number, .data.submatches[0].match.text]|@tsv' | ")
-            (format "tee %s" tmp-file-1) " | "
-            "cut -f1 | xargs stat -f %c "
-            (format "> %s" tmp-file-2))))
-      (shell-command full-command)
-      (shell-command (format "paste %s %s | sort -t$'\t' -k4 -nr > %s" tmp-file-1 tmp-file-2 tmp-file-3))
-      tmp-file-3)))
+(defun mxtodo--gather-todos (&optional folder-path file-ext todo-pattern)
+  "Gather todo items from files with extension FILE-EXT in FOLDER-PATH matching TODO-PATTERN."
+  (progn
+    (unless folder-path (setq folder-path mxtodo-folder-path))
+    (unless file-ext (setq file-ext mxtodo-file-extension))
+    (unless todo-pattern (setq todo-pattern mxtodo-pattern-str))
+    (let ((folder-abs-path (expand-file-name (file-name-as-directory folder-path))))
+      (mxtodo-searcher-search-directory folder-abs-path file-ext todo-pattern))))
 
 (defun mxtodo--ts-date-from-string (date-str)
   "Parse a date of the form YYYY-M-D into a ts date struct."
@@ -183,23 +198,25 @@
   "Return the file last modified timestamp as a ts struct by inspecting the file-attributes of FILE-PATH."
   (make-ts :unix (float-time (file-attribute-modification-time (file-attributes file-path)))))
 
-(defun mxtodo--make-todo-from-temp-file-line (line)
-  "Parse a todo temp file line and construct a todo-item."
-  (let* ((parts (split-string line "\t"))
-         (file-path (pop parts))
-         (file-line-number (string-to-number (pop parts)))
-         (file-display-date-ts (mxtodo--display-date-from-file-path file-path))
-         (todo-text (pop parts))
-         (file-last-update-ts (mxtodo--file-last-modified file-path)))
-    (seq-let [todo-text is-completed date-due] (mxtodo--extract-info-from-text todo-text)
-             (make-mxtodo-item
-              :file-path file-path
-              :file-line-number file-line-number
-              :file-display-date-ts file-display-date-ts
-              :file-last-update-ts file-last-update-ts
-              :text todo-text
-              :is-completed is-completed
-              :date-due-ts date-due))))
+(defun mxtodo--make-todo-from-searcher-vec (todo-vec)
+  "Construct a todo-item from 3-element TODO-VEC."
+  (progn
+    (unless (equal (length todo-vec) 3)
+      (error "Expected a 3-element todo vec, but got %s" todo-vec))
+    (let* ((file-path (elt todo-vec 0))
+           (file-line-number (elt todo-vec 1))
+           (file-display-date-ts (mxtodo--display-date-from-file-path file-path))
+           (todo-text (elt todo-vec 2))
+           (file-last-update-ts (mxtodo--file-last-modified file-path)))
+      (seq-let [todo-text is-completed date-due] (mxtodo--extract-info-from-text todo-text)
+        (make-mxtodo-item
+         :file-path file-path
+         :file-line-number file-line-number
+         :file-display-date-ts file-display-date-ts
+         :file-last-update-ts file-last-update-ts
+         :text todo-text
+         :is-completed is-completed
+         :date-due-ts date-due)))))
 
 (defun mxtodo--toggle-todo-completed (todo)
   "Toggle TODO's is-completed field."
@@ -307,31 +324,32 @@ with incomplete todo items first, followed by completed todo items."
       (xref-pop-to-location todo-xref))))
 
 ;;;###autoload
-(defun mxtodo-make-todo-buffer (&optional buffer-name folder-path)
+(defun mxtodo-make-todo-buffer (&optional buffer-name folder-path file-ext todo-pattern)
   "Construct a read-only buffer BUFFER-NAME where each line corresponds to a todo from notes in FOLDER-PATH."
   (interactive)
-  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
-  (unless folder-path (setq folder-path mxtodo-folder-path))
-  (let* ((temp-file-name (mxtodo--gather-todos-tmpfile folder-path))
-         (temp-file-text (f-read-text temp-file-name))
-         (todos (list)))
-    (dolist (line (split-string temp-file-text "\n"))
-      (if (not (string= "" line))
-          (setq todos (cons (mxtodo--make-todo-from-temp-file-line line) todos))))
-    (setq todos (mxtodo--sort-todos todos))
-    (with-current-buffer (get-buffer-create buffer-name)
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (text-mode)
-        (save-excursion
-          (goto-char (point-min))
-          (while todos
-            (let ((todo (pop todos)))
-              (if (not (and mxtodo-hide-completed (mxtodo-item-is-completed todo)))
-                  (insert (mxtodo--render-todo todo) "\n"))))))
-      (read-only-mode))
-    (switch-to-buffer buffer-name)
-    (mxtodo-mode)))
+  (progn
+    (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+    (unless folder-path (setq folder-path mxtodo-folder-path))
+    (unless file-ext (setq file-ext mxtodo-file-extension))
+    (unless todo-pattern (setq todo-pattern mxtodo-pattern-str))
+    (let* ((todos
+            (mapcar
+             (lambda (v) (mxtodo--make-todo-from-searcher-vec v))
+             (mxtodo--gather-todos folder-path file-ext todo-pattern)))
+           (sorted-todos (mxtodo--sort-todos todos)))
+      (with-current-buffer (get-buffer-create buffer-name)
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (text-mode)
+          (save-excursion
+            (goto-char (point-min))
+            (while sorted-todos
+              (let ((todo (pop sorted-todos)))
+                (if (not (and mxtodo-hide-completed (mxtodo-item-is-completed todo)))
+                    (insert (mxtodo--render-todo todo) "\n"))))))
+        (read-only-mode))
+      (switch-to-buffer buffer-name)
+      (mxtodo-mode))))
 
 ;;;###autoload
 (defun mxtodo-toggle-current-todo-completed (&optional buffer-name)
@@ -388,6 +406,8 @@ with incomplete todo items first, followed by completed todo items."
   (interactive)
   (save-excursion
     (progn
+      (unless folder-path
+        (setq folder-path mxtodo-folder-path))
       (unless file-name
         (setq file-name (mxtodo-create-daily-note folder-path)))
       (unless buffer-name

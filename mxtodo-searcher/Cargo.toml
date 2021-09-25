@@ -1,0 +1,29 @@
+[package]
+name = "mxtodo_searcher"
+version = "0.1.0"
+authors = ["Robert Voyer <robert.voyer@gmail.com>"]
+edition = "2018"
+description = "A very purpose-built library that uses ripgrep to search for TODO items in a directory of Markdown files."
+license = "GPL-3.0-or-later"
+repository = "https://github.com/rlvoyer/mxtodo"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "mxtodo_searcher"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mxtodo_search"
+path = "src/main.rs"
+
+[dependencies]
+emacs = "0.15"
+grep = "0.2.0"
+walkdir = "2.3.2"
+failure = "0.1.1"
+serde = "1.0.59"
+serde_json = "1.0.59"
+clap = "3.0.0-beta.4"
+
+[dev-dependencies]
+tempfile = "3.2.0"

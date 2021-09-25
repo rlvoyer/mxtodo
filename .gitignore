@@ -16,3 +16,11 @@ mxtodo-autoloads.el
 # Added automatically by ‘eldev init’.
 /.eldev
 /Eldev-local
+
+# Rust
+*/target
+**/*.rs.bk
+Cargo.lock
+bin/
+pkg/
+**/mxtodo-searcher.so
