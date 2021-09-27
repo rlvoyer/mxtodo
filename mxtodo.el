@@ -45,7 +45,10 @@
 (defvar mxtodo--searcher-module-url nil
   "The URL for the searcher module.")
 
-(setq mxtodo--searcher-module-url (concat "file:" "/Users/rlvoyer/Code/mxtodo/mxtodo-searcher/mxtodo-searcher.so"))
+(setq mxtodo--searcher-module-url
+      (if (getenv "MXTODO_SEARCHER_USE_LOCAL")
+          (concat "file://" (file-name-directory load-file-name) "mxtodo-searcher.so")
+        nil)) ;; TODO: generate URL to appropriate release artifact in Github using version and system configuration
 
 (unless (file-exists-p mxtodo--searcher-module-file-name)
   (url-copy-file mxtodo--searcher-module-url  mxtodo--searcher-module-file-name))
