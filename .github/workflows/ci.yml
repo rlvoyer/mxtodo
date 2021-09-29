@@ -16,12 +16,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v2
         with:
           lfs: true
-      - uses: actions/download-artifact@master
-        with:
-          name: version
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
@@ -42,7 +39,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-      - uses: actions/upload-artifact@master
+      - uses: actions/upload-artifact@v2
         with:
           name: mxtodo-searcher.so
           path: ./target/debug/libmxtodo_searcher.so
