@@ -62,8 +62,8 @@ jobs:
 
     steps:
       - uses: actions/download-artifact@master
-          with:
-            name: mxtodo-searcher.so
+        with:
+          name: mxtodo-searcher.so
       - name: Set up Emacs
         uses: purcell/setup-emacs@master
         with:
