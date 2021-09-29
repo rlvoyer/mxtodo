@@ -13,7 +13,42 @@ on:
   workflow_dispatch:
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+        with:
+          lfs: true
+      - uses: actions/download-artifact@master
+        with:
+          name: version
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+      - uses: actions/upload-artifact@master
+        with:
+          name: mxtodo-searcher.so
+          path: ./target/debug/libmxtodo_searcher.so
   test:
+    needs:
+      - build
     runs-on: ubuntu-latest
     continue-on-error: ${{matrix.allow_failures}}
 
@@ -26,18 +61,21 @@ jobs:
         allow_failures: [false]
 
     steps:
-    - name: Set up Emacs
-      uses: purcell/setup-emacs@master
-      with:
-        version: ${{matrix.emacs_version}}
+      - uses: actions/download-artifact@master
+          with:
+            name: mxtodo-searcher.so
+      - name: Set up Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: ${{matrix.emacs_version}}
 
-    - name: Install Eldev
-      run: curl -fsSL https://raw.github.com/doublep/eldev/master/webinstall/github-eldev | sh
+      - name: Install Eldev
+        run: curl -fsSL https://raw.github.com/doublep/eldev/master/webinstall/github-eldev | sh
 
-    - name: Check out the source code
-      uses: actions/checkout@v2
+      - name: Check out the source code
+        uses: actions/checkout@v2
 
-    - name: Test the project
-      run: |
-        eldev -p -dtT -C test --expect 5
-        eldev -dtT -C compile --set all --warnings-as-errors
+      - name: Test the project
+        run: |
+          eldev -p -dtT -C test --expect 5
+          eldev -dtT -C compile --set all --warnings-as-errors
