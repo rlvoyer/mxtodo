@@ -39,10 +39,11 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
+          args: --manifest-path mxtodo-searcher/Cargo.toml
       - uses: actions/upload-artifact@v2
         with:
           name: mxtodo-searcher.so
-          path: ./target/debug/libmxtodo_searcher.so
+          path: ./mxtodo-searcher/target/debug/libmxtodo_searcher.so
   test:
     needs:
       - build
