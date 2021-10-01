@@ -66,20 +66,18 @@ jobs:
         with:
           name: mxtodo-searcher.so
 
-      - name: List directory
+      - name: Rename module artifact
+        run: mv libmxtodo_searcher.so mxtodo-searcher.so
+
+      - name: Set up Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: ${{matrix.emacs_version}}
+
+      - name: Install Eldev
+        run: curl -fsSL https://raw.github.com/doublep/eldev/master/webinstall/github-eldev | sh
+
+      - name: Test the project
         run: |
-          pwd
-          ls
-
-      # - name: Set up Emacs
-      #   uses: purcell/setup-emacs@master
-      #   with:
-      #     version: ${{matrix.emacs_version}}
-
-      # - name: Install Eldev
-      #   run: curl -fsSL https://raw.github.com/doublep/eldev/master/webinstall/github-eldev | sh
-
-      # - name: Test the project
-      #   run: |
-      #     eldev -p -dtT -C test --expect 5
-      #     eldev -dtT -C compile --set all --warnings-as-errors
+          eldev -p -dtT -C test --expect 5
+          eldev -dtT -C compile --set all --warnings-as-errors
