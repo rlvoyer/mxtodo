@@ -37,17 +37,15 @@
 ;; if mxtodo-searcher.so not in same directory as load-file-name, download it
 ;; URL should be a function of architecture and version, but let's assume architecture to start
 
-(defvar mxtodo--searcher-module-file-name
+(defconst mxtodo--searcher-module-file-name
   (concat (file-name-directory load-file-name) "mxtodo-searcher.so")
   "The expected local file path for the mxtodo-searcher module.")
 
-(defvar mxtodo--searcher-module-url nil
+(defconst mxtodo--searcher-module-url
+  (if (getenv "MXTODO_SEARCHER_USE_LOCAL")
+      (concat "file:/" (file-name-directory load-file-name) "mxtodo-searcher.so")
+    nil)
   "The URL for the searcher module.")
-
-(setq mxtodo--searcher-module-url
-      (if (getenv "MXTODO_SEARCHER_USE_LOCAL")
-          (concat "file:/" (file-name-directory load-file-name) "mxtodo-searcher.so")
-        nil)) ;; TODO: generate URL to appropriate release artifact in Github using version and system configuration
 
 (unless (file-exists-p mxtodo--searcher-module-file-name)
   (url-copy-file mxtodo--searcher-module-url  mxtodo--searcher-module-file-name))
