@@ -69,6 +69,12 @@ jobs:
       - name: Rename module artifact
         run: mv libmxtodo_searcher.so mxtodo-searcher.so
 
+      - name: Check module artifact
+        run: |
+          ls -lath mxtodo-searcher.so
+          du -sh mxtodo-searcher.so
+          file mxtodo-searcher.so
+
       - name: Set up Emacs
         uses: purcell/setup-emacs@master
         with:
