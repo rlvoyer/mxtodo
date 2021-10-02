@@ -37,18 +37,19 @@
 ;; if mxtodo-searcher.so not in same directory as load-file-name, download it
 ;; URL should be a function of architecture and version, but let's assume architecture to start
 
-(defconst mxtodo--searcher-module-file-name
-  (concat (file-name-directory load-file-name) "mxtodo-searcher.so")
-  "The expected local file path for the mxtodo-searcher module.")
-
-(defconst mxtodo--searcher-module-url
-  (if (getenv "MXTODO_SEARCHER_USE_LOCAL")
-      (concat "file:/" (file-name-directory load-file-name) "mxtodo-searcher.so")
-    nil)
-  "The URL for the searcher module.")
-
-(unless (file-exists-p mxtodo--searcher-module-file-name)
-  (url-copy-file mxtodo--searcher-module-url  mxtodo--searcher-module-file-name))
+(eval-when-compile
+  (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
+  
+  (defconst mxtodo--searcher-module-url
+    (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
+        (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
+      nil) ;; TODO: download
+    "The URL for the searcher module.")
+  
+  (unless (file-exists-p (concat (file-name-directory load-file-name) "mxtodo-searcher.so"))
+    (progn
+      (message (concat "copying " mxtodo--searcher-module-url " into " (concat (file-name-directory load-file-name) "mxtodo-searcher.so")))
+      (copy-file mxtodo--searcher-module-url (concat (file-name-directory load-file-name) "mxtodo-searcher.so")))))
 
 (require 'mxtodo-searcher)
 

@@ -5,6 +5,4 @@
 
 (eldev-use-plugin 'autoloads)
 
-(setenv "MXTODO_SEARCHER_USE_LOCAL" "true")
-
-(add-to-list 'load-path "mxtodo-searcher")
+(setenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH" (expand-file-name "./mxtodo-searcher.so"))

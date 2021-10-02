@@ -19,27 +19,38 @@ jobs:
       - uses: actions/checkout@v2
         with:
           lfs: true
+
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
           key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
+
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/git
           key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
+
       - uses: actions/cache@v1
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+
       - uses: actions-rs/cargo@v1
         with:
           command: build
           args: --manifest-path mxtodo-searcher/Cargo.toml
+
+      - name: Check build artifact
+        run: |
+          filesize=$(du -sh ./mxtodo-searcher/target/debug/libmxtodo_searcher.so)
+          echo "Artifact size: $filesize"
+
       - uses: actions/upload-artifact@v2
         with:
           name: mxtodo-searcher.so
@@ -66,14 +77,14 @@ jobs:
         with:
           name: mxtodo-searcher.so
 
+      - name: Check for module artifact
+        run: |
+          if [ ! -f libmxtodo_searcher.so ]; then
+              exit 1
+          fi        
+
       - name: Rename module artifact
         run: mv libmxtodo_searcher.so mxtodo-searcher.so
-
-      - name: Check module artifact
-        run: |
-          ls -lath mxtodo-searcher.so
-          du -sh mxtodo-searcher.so
-          file mxtodo-searcher.so
 
       - name: Set up Emacs
         uses: purcell/setup-emacs@master
