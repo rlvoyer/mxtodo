@@ -3,7 +3,7 @@
 ;; Copyright (C) 2021 Robert Voyer.
 
 ;; Author: Robert Voyer <robert.voyer@gmail.com>
-;; Version: 0.1.3
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "27.1") (dash "2.19.0") (f "0.20.0") (ts "0.2"))
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
