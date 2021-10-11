@@ -41,7 +41,8 @@ increment_patch_version() {
 
 update_package_version() {
     local release_version=$1
-    sed -i '' -e "s/^;; Version: \(.*\)$/;; Version: $release_version/" $HERE/../mxtodo.el
+    sed -i '' -e "s/^;; Version: .*$/;; Version: $release_version/" $HERE/../mxtodo.el
+    sed -i '' -e "s/^version = \".*\"$/version = \"$release_version\"/" $HERE/../mxtodo-searcher/Cargo.toml
 }
 
 capture_unreleased_changes_from_changelog() {
@@ -55,6 +56,21 @@ capture_unreleased_changes_from_changelog() {
              printf("\n## [%s] - %s\n", version, date);
          }
      }' $HERE/../CHANGELOG.md
+}
+
+build_searcher_artifacts() {
+    pushd $HERE/../mxtodo-searcher > /dev/null
+    rm -rf release-artifacts
+    mkdir release-artifacts
+    target=x86_64-apple-darwin && \
+        echo "Building mxtodo-searcher for $target" && \
+        cargo build --release --target=$target && \
+        cp target/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.$target.dylib
+    # target=x86_64-unknown-linux-gnu && \
+    #     echo "Building mxtodo-searcher for $target" && \
+    #     cargo build --verbose --release --target=$target && \
+    #     cp target/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.$target.dylib
+    popd > /dev/null
 }
 
 POSITIONAL=()
@@ -87,12 +103,11 @@ if [[ $(git diff --stat) != '' ]]; then
     exit 1
 fi
 
-DEFAULT_VERSION=$(current_version)
-VERSION="${VARIABLE:-$DEFAULT_VERSION}"
-RELEASE_VERSION=$(increment_patch_version $VERSION)
+CURRENT_VERSION=$(current_version)
+RELEASE_VERSION="${VERSION:-$(increment_patch_version $CURRENT_VERSION)}"
 
 while true; do
-    read -p "Updating from $VERSION to $RELEASE_VERSION. Is this correct? " yn
+    read -p "Updating from $CURRENT_VERSION to $RELEASE_VERSION. Is this correct? " yn
     case $yn in
         [Yy]* ) break;;
         [Nn]* ) echo "Please run again and specify the correct release version."; exit;;
@@ -100,10 +115,18 @@ while true; do
     esac
 done
 
+build_searcher_artifacts
+
 update_package_version $RELEASE_VERSION
 capture_unreleased_changes_from_changelog $RELEASE_VERSION > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp $HERE/../CHANGELOG.md
-git add $HERE/../mxtodo.el $HERE/../CHANGELOG.md && git commit -m "Updated version and CHANGELOG for release $RELEASE_VERSION."
+git add $HERE/../mxtodo.el $HERE/../CHANGELOG.md $HERE/../mxtodo-searcher/Cargo.toml && \
+    git commit -m "Updated version and CHANGELOG for release $RELEASE_VERSION."
 
 TAG="v$RELEASE_VERSION"
 
 gh release create $TAG -F CHANGELOG.md
+
+for asset in `ls mxtodo-searcher/release-artifacts`;
+do
+    gh release upload --clobber $TAG $asset
+done
