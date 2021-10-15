@@ -34,14 +34,30 @@
 (unless (functionp 'module-load)
   (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
 
-;; if mxtodo-searcher.so not in same directory as load-file-name, download it
-;; URL should be a function of architecture and version, but let's assume architecture to start
-(eval-when-compile
-  (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
-
-  (unless (file-exists-p "mxtodo-searcher.so")
+(eval-and-compile
+  (defvar mxtodo--version
     (progn
-      (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") (expand-file-name "mxtodo-searcher.so")))))
+      (find-file load-file-name)
+      (goto-char (point-min))
+      (search-forward ";; Version: ")
+      (buffer-substring-no-properties (point) (point-at-eol)))
+    "The version of this module."))
+
+;; URL should be a function of architecture and version, but let's assume architecture to start
+;; URL=https://github.com/rlvoyer/mxtodo/releases/download/v<VERSION>/libmxtodo_searcher.<SYSTEM>.(dylib|so)
+(eval-when-compile
+  (let ((mxtodo-searcher-module-file (concat "mxtodo-searcher-" mxtodo--version ".so"))
+        (mxtodo-searcher-module-url))
+    (unless (file-exists-p mxtodo-searcher-module-file)
+      (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
+          (progn
+            (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
+            (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") (expand-file-name mxtodo-searcher-module-file)))
+        (progn
+          (setq mxtodo-searcher-module-url
+                (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
+          (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url)))
+          (url-copy-file mxtodo-searcher-module-url (expand-file-name mxtodo-searcher-module-file))))))
 
 (require 'mxtodo-searcher)
 

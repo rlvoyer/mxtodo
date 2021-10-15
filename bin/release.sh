@@ -128,5 +128,5 @@ gh release create $TAG -F CHANGELOG.md
 
 for asset in `ls mxtodo-searcher/release-artifacts`;
 do
-    gh release upload --clobber $TAG $asset
+    gh release upload --clobber $TAG $HERE/../mxtodo-searcher/release-artifacts/$asset
 done
