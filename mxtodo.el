@@ -36,17 +36,16 @@
 
 (eval-and-compile
   (defvar mxtodo--version
-    (progn
-      (find-file load-file-name)
+    (with-temp-buffer
+      (insert-file-contents (or load-file-name byte-compile-current-file))
       (goto-char (point-min))
       (search-forward ";; Version: ")
       (buffer-substring-no-properties (point) (point-at-eol)))
-    "The version of this module."))
+    "The version of this module.")
 
-;; URL should be a function of architecture and version, but let's assume architecture to start
-;; URL=https://github.com/rlvoyer/mxtodo/releases/download/v<VERSION>/libmxtodo_searcher.<SYSTEM>.(dylib|so)
-(eval-when-compile
+  ;; URL should be a function of architecture and version, but let's assume architecture to start
   (let ((mxtodo-searcher-module-file (concat "mxtodo-searcher-" mxtodo--version ".so"))
+        (mxtodo-searcher-module-link (concat "mxtodo-searcher.so"))
         (mxtodo-searcher-module-url))
     (unless (file-exists-p mxtodo-searcher-module-file)
       (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
@@ -56,8 +55,11 @@
         (progn
           (setq mxtodo-searcher-module-url
                 (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
-          (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url)))
-          (url-copy-file mxtodo-searcher-module-url (expand-file-name mxtodo-searcher-module-file))))))
+          (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
+          (url-copy-file mxtodo-searcher-module-url (expand-file-name mxtodo-searcher-module-file))))
+      (if (file-exists-p mxtodo-searcher-module-link)
+          (delete-file mxtodo-searcher-module-link))
+      (make-symbolic-link mxtodo-searcher-module-file mxtodo-searcher-module-link t))))
 
 (require 'mxtodo-searcher)
 
