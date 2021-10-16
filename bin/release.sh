@@ -59,18 +59,15 @@ capture_unreleased_changes_from_changelog() {
 }
 
 build_searcher_artifacts() {
-    pushd $HERE/../mxtodo-searcher > /dev/null
+    pushd $HERE/.. > /dev/null
     rm -rf release-artifacts
     mkdir release-artifacts
-    target=x86_64-apple-darwin && \
-        echo "Building mxtodo-searcher for $target" && \
-        cargo build --release --target=$target && \
-        cp target/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.$target.dylib
-    # target=x86_64-unknown-linux-gnu && \
-    #     echo "Building mxtodo-searcher for $target" && \
-    #     cargo build --verbose --release --target=$target && \
-    #     cp target/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.$target.dylib
-    popd > /dev/null
+    pushd mxtodo-searcher > /dev/null
+    cargo build --verbose --release --target=x86_64-unknown-linux-gnu
+    cargo build --verbose --release --target=x86_64-apple-darwin
+    cp x86_64-unknown-linux-gnu/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.dylib
+    cp x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib
+    popd > /dev/null && popd > /dev/null
 }
 
 POSITIONAL=()
