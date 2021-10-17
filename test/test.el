@@ -17,7 +17,6 @@
 (require 'mxtodo)
 
 (ert-deftest test-display-date-from-file-path ()
-  "Tests the construction of a todo display date from its filename."
   (should (equal (mxtodo--display-date-from-file-path "/foo/bar/2021-5-24.md")
                  (make-ts
                   :year 2021
@@ -28,7 +27,6 @@
                   :second 0))))
 
 (ert-deftest test-render-a-todo-date ()
-  "Tests that a TODO renders correctly."
   (let ((date (make-ts
                :year 2021
                :month 5
@@ -40,7 +38,6 @@
                    "2021-5-24"))))
 
 (ert-deftest test-extract-info-from-text-returns-due-date ()
-  "Test that mxtodo--extract-info-from-text optionally returns due date."
   (let* ((actual (mxtodo--extract-info-from-text "- [ ] write more tests (due 2021-7-14)"))
          (expected-due-date
           (make-ts
@@ -54,7 +51,6 @@
     (should (equal (aref expected 2) (aref actual 2)))))
 
 (ert-deftest test-render-date ()
-  "Tests that a TODO date renders correctly."
   (let* ((date
           (make-ts :year 2021
                    :month 6
@@ -67,7 +63,6 @@
     (should (equal expected actual))))
 
 (ert-deftest test-render-todo-no-due-date ()
-  "Tests that a TODO renders correctly."
   (let* ((input-todo
           (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
                             :file-line-number 10
@@ -85,7 +80,6 @@
     (should (equal expected actual))))
 
 (ert-deftest test-render-todo-with-due-date ()
-  "Tests that a TODO renders correctly."
   (let* ((input-todo
           (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
                             :file-line-number 10
@@ -109,13 +103,11 @@
     (should (equal expected actual))))
 
 (ert-deftest test-parse-bad-date-returns-cl-values-with-a-non-nil-error ()
-  "Tests that mxtodo--parse-date fails on non-ISO-8601-formatted input."
   (let ((expected (cl-values nil "Unable to parse specified date string 2021-8-7; date must be ISO-8601-formatted."))
         (actual (mxtodo--parse-date "2021-8-7")))
     (should (equal expected actual))))
 
 (ert-deftest test-parse-good-date-returns-cl-values ()
-  "Tests that mxtodo--parse-date succeeds on ISO-8601-formatted input."
   (let* ((date-str "2021-08-07")
          (expected-error nil)
          (expected-year 2021)
@@ -155,7 +147,7 @@
 ;;     (should (equal expected actual))))
 
 (defun todo-text-no-properties (rendered-todo-item)
-  "Test helper function that renders a RENDERED-TODO-ITEM as a string with no properties."
+  "Test rendering RENDERED-TODO-ITEM as a string with no properties."
   (substring-no-properties rendered-todo-item 0 (next-single-property-change 0 'invisible rendered-todo-item)))
 
 (defun nshuffle (sequence)
@@ -296,7 +288,6 @@
     (split-string (f-read-text notes-file) "\n"))))
 
 (ert-deftest test-todo-is-fresh ()
-  "Test that todo is fresh when underlying file hasn't been modified since last read."
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (todos (read-test-notes-file notes-file))
@@ -306,7 +297,6 @@
     (should (equal expected actual))))
 
 (ert-deftest test-todo-is-stale ()
-  "Test that todo is stale when underlying file has been modified since last read."
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (todos (read-test-notes-file notes-file))
@@ -319,14 +309,12 @@
       (should (equal expected actual)))))
 
 (ert-deftest test-adding-a-todo-works-for-a-new-notefile ()
-  "Test that adding a todo works on a fresh daily notefile."
   (let* ((notes-dir (make-test-notes-dir))
          (todo-text "Water the garden")
          (due-date (ts-adjust 'day +7 (ts-now))))
     (should (not (equal (mxtodo-create-todo notes-dir nil nil todo-text due-date) nil)))))
 
 (ert-deftest test-adding-a-todo-works-for-an-existing-notefile ()
-  "Test that adding a todo works on a fresh daily notefile."
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (todo-text "Take out the garbage")
@@ -334,7 +322,6 @@
     (should (not (equal (mxtodo-create-todo notes-dir nil notes-file todo-text due-date) nil)))))
 
 (ert-deftest test-search-directory ()
-  "Test searching a directory."
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (actual (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]")))

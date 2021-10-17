@@ -99,7 +99,14 @@
   (is-completed nil :type boolean))
 
 (defun mxtodo--gather-todos (&optional folder-path file-ext todo-pattern)
-  "Gather todo items from files with extension FILE-EXT in FOLDER-PATH matching TODO-PATTERN."
+  "Gather todo items from files matching specified parameters.
+If set, FOLDER-PATH indicates the folder to search within. Otherwise,
+it defaults to `mxtodo-folder-path`.
+If set, FILE-EXT indicates the file extension for files to consider in search.
+Otherwise, it defaults to `mxtodo-file-extension`.
+If set, TODO-PATTERN is a PCRE-compatible regular expression string
+that corresponds to the TODO pattern to search for.
+Otherwise, it defaults to `mxtodo-pattern-str`."
   (progn
     (unless folder-path (setq folder-path mxtodo-folder-path))
     (unless file-ext (setq file-ext mxtodo-file-extension))
@@ -123,7 +130,7 @@
     nil))
 
 (defun mxtodo--display-date-from-file-path (file-path)
-  "Parse a TODO filename of the form /PATH/TO/FILE/YYYY-M-D.extension into a ts date."
+  "Parse a TODO filename (/PATH/TO/FILE/YYYY-M-D.extension) into a date."
   (let ((display-date-str (file-name-sans-extension (car (last (split-string file-path "/"))))))
     (mxtodo--ts-date-from-string display-date-str)))
 
@@ -196,7 +203,11 @@
     (mxtodo--prettify-text todo line-text todo-text-start-pos todo-text-end-pos)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
-  "Extract a 3-element vector containing an is-completed bool, the TODO text, and a due date from a string of the form `- [ ] do something useful (due 2021-7-2)`."
+  "Parse TODO-LINE string into a 3-element todo vector.
+The resulting vector contains an is-completed bool, the TODO text,
+and a due date.
+Consider the example todo-line: `- [ ] do something useful (due 2021-7-2)`.
+The resulting vector would contain [nil \"do something useful\" #s(ts ...)]."
   (if (string-match "^- \\[\\(x\\|[[:blank:]]\\)\\] \\(.*?\\)\\(?: (due \\(.*\\))\\)?$" todo-line)
       (let* ((completed-text (match-string 1 todo-line))
              (todo-text (match-string 2 todo-line))
@@ -206,7 +217,9 @@
     (vector todo-line nil nil)))
 
 (defun mxtodo--file-last-modified (file-path)
-  "Return the file last modified timestamp as a ts struct by inspecting the file-attributes of FILE-PATH."
+  "Return the file last modified timestamp of the file at FILE-PATH.
+This function extracts the last-modified timestamp from file attributes.
+The resulting timestamp is returned as a ts struct."
   (make-ts :unix (float-time (file-attribute-modification-time (file-attributes file-path)))))
 
 (defun mxtodo--make-todo-from-searcher-vec (todo-vec)
@@ -284,21 +297,18 @@
 
 (defun mxtodo--write-todo-to-file (todo)
   "Persist a TODO from memory back to its source file."
-  (let ((todo-file-buffer-name))
-    (progn
-      (let ((todo-file-path (mxtodo-item-file-path todo)))
-        (if (mxtodo--todo-is-fresh-p todo)
-            (save-excursion
-              (progn
-                (find-file todo-file-path)
-                (goto-char (point-min))
-                (forward-line (1- (mxtodo-item-file-line-number todo)))
-                (mxtodo--delete-current-line)
-                (insert (mxtodo--todo-str todo) "\n")
-                (save-buffer)))
-          (error "the file containing TODO has been modified since the last read; refresh the todo buffer.")))
-      (if (not (string= todo-file-buffer-name (buffer-name)))
-          (kill-buffer todo-file-buffer-name)))))
+  (progn
+    (let ((todo-file-path (mxtodo-item-file-path todo)))
+      (if (mxtodo--todo-is-fresh-p todo)
+          (save-excursion
+            (progn
+              (find-file todo-file-path)
+              (goto-char (point-min))
+              (forward-line (1- (mxtodo-item-file-line-number todo)))
+              (mxtodo--delete-current-line)
+              (insert (mxtodo--todo-str todo) "\n")
+              (save-buffer)))
+        (error "the file containing TODO has been modified since the last read; refresh the todo buffer.")))))
 
 ;;;###autoload
 (define-derived-mode mxtodo-mode text-mode "Mxtodo"
@@ -336,7 +346,15 @@ with incomplete todo items first, followed by completed todo items."
 
 ;;;###autoload
 (defun mxtodo-make-todo-buffer (&optional buffer-name folder-path file-ext todo-pattern)
-  "Construct a read-only buffer BUFFER-NAME where each line corresponds to a todo from notes in FOLDER-PATH."
+  "Construct a read-only todo buffer BUFFER-NAME.
+If BUFFER-NAME is not set, it defaults to mxtodo-buffer-name.
+If set, FOLDER-PATH indicates the folder to search within. Otherwise,
+it defaults to `mxtodo-folder-path`.
+If set, FILE-EXT indicates the file extension for files to consider in search.
+Otherwise, it defaults to `mxtodo-file-extension`.
+If set, TODO-PATTERN is a PCRE-compatible regular expression string
+that corresponds to the TODO pattern to search for.
+Otherwise, it defaults to `mxtodo-pattern-str`."
   (interactive)
   (progn
     (unless buffer-name (setq buffer-name mxtodo-buffer-name))
@@ -404,7 +422,9 @@ with incomplete todo items first, followed by completed todo items."
     (looking-at-p "[[:space:]]*$")))
 
 (defun mxtodo--parse-date (date-str)
-  "Parse the specified date string into a ts or return an error if it failed to parse."
+  "Parse the specified date string DATE-STR.
+The result is returned as a ts.
+If the specified date does not parse, an error is raised."
   (condition-case
       nil
       (cl-values (ts-parse-fill 'begin date-str) nil)
