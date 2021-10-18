@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate failure;
 
-use clap::{AppSettings, Clap};
+use clap::Parser;
 use failure::Error;
 use serde_json;
 
@@ -12,8 +12,8 @@ const DEFAULT_EXTENSION: &str = r".md";
 
 /// Search for TODOs in a specified directory.
 /// Optionally specify a regex pattern and a file extension for files that contain TODOs.
-#[derive(Clap)]
-#[clap(setting = AppSettings::ColoredHelp)]
+#[derive(Parser)]
+#[clap()]
 struct Opts {
     /// The directory in which to search for TODOs.
     directory: String,
