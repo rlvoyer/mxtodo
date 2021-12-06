@@ -65,8 +65,8 @@ build_searcher_artifacts() {
     pushd mxtodo-searcher > /dev/null
     cargo build --verbose --release --target=x86_64-unknown-linux-gnu
     cargo build --verbose --release --target=x86_64-apple-darwin
-    cp x86_64-unknown-linux-gnu/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.dylib
-    cp x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib
+    cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so
+    cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib
     popd > /dev/null && popd > /dev/null
 }
 
