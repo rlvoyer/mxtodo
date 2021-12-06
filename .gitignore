@@ -24,3 +24,4 @@ Cargo.lock
 bin/
 pkg/
 **/mxtodo-searcher.so
+**/release-artifacts

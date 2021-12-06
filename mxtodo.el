@@ -44,22 +44,23 @@
     "The version of this module.")
 
   ;; URL should be a function of architecture and version, but let's assume architecture to start
-  (let ((mxtodo-searcher-module-file (concat "mxtodo-searcher-" mxtodo--version ".so"))
-        (mxtodo-searcher-module-link (concat "mxtodo-searcher.so"))
+  (let* ((mxtodo-searcher-module-file (concat "mxtodo-searcher-" mxtodo--version ".so"))
+        (mxtodo-searcher-module-abs-file (expand-file-name mxtodo-searcher-module-file))
+        (mxtodo-searcher-module-install-path (file-name-as-directory "/usr/local/share/emacs/site-lisp"))
+        (mxtodo-searcher-module-install-file (concat mxtodo-searcher-module-install-path "mxtodo-searcher.so"))
         (mxtodo-searcher-module-url))
     (unless (file-exists-p mxtodo-searcher-module-file)
       (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
           (progn
             (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
-            (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") (expand-file-name mxtodo-searcher-module-file)))
+            (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-abs-file))
         (progn
           (setq mxtodo-searcher-module-url
                 (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
           (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
           (url-copy-file mxtodo-searcher-module-url (expand-file-name mxtodo-searcher-module-file))))
-      (if (file-exists-p mxtodo-searcher-module-link)
-          (delete-file mxtodo-searcher-module-link))
-      (make-symbolic-link mxtodo-searcher-module-file mxtodo-searcher-module-link t))))
+      (message (concat "Copying module to: " mxtodo-searcher-module-install-file))
+      (copy-file mxtodo-searcher-module-abs-file mxtodo-searcher-module-install-file t))))
 
 (require 'mxtodo-searcher)
 
