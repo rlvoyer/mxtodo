@@ -37,6 +37,10 @@
     (should (equal (mxtodo--render-date date)
                    "2021-5-24"))))
 
+(cl-defstruct test-tuple
+  text
+  expected-extracted-info)
+
 (ert-deftest test-extract-info-from-text-returns-due-date ()
   (let* ((actual (mxtodo--extract-info-from-text "- [ ] write more tests (due 2021-7-14)"))
          (expected-due-date
@@ -47,8 +51,42 @@
            :hour 0
            :minute 0
            :second 0))
-         (expected (vector "write more tests" nil expected-due-date)))
-    (should (equal (aref expected 2) (aref actual 2)))))
+         (expected (vector "write more tests" nil expected-due-date nil)))
+    (should (equal expected actual))))
+
+(ert-deftest test-extract-info-from-text-returns-completed-date ()
+  (let* ((actual (mxtodo--extract-info-from-text "- [x] write more tests (completed 2021-7-15)"))
+         (expected-completed-date
+          (make-ts
+           :year 2021
+           :month 7
+           :day 15
+           :hour 0
+           :minute 0
+           :second 0))         
+         (expected (vector "write more tests" t nil expected-completed-date)))
+    (should (equal expected actual))))
+
+(ert-deftest test-extract-info-from-text-returns-due-date-and-completed-date ()
+  (let* ((actual (mxtodo--extract-info-from-text "- [x] write more tests (due 2021-7-14) (completed 2021-7-15)"))
+         (expected-due-date
+          (make-ts
+           :year 2021
+           :month 7
+           :day 14
+           :hour 0
+           :minute 0
+           :second 0))         
+         (expected-completed-date
+          (make-ts
+           :year 2021
+           :month 7
+           :day 15
+           :hour 0
+           :minute 0
+           :second 0))         
+         (expected (vector "write more tests" t expected-due-date expected-completed-date)))
+    (should (equal expected actual))))
 
 (ert-deftest test-render-date ()
   (let* ((date

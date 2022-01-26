@@ -35,6 +35,17 @@
   (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
 
 (eval-and-compile
+  (defvar mxtodo--module-install-dir
+    (concat (expand-file-name user-emacs-directory) "mxtodo")
+    "The directory where the native searcher module is to be installed.")
+
+  (defun mxtodo--make-module-install-dir ()
+    "Make a directory where mxtodo will put the searcher native module."
+    (progn
+      (unless (file-exists-p mxtodo--module-install-dir)
+        (make-directory mxtodo--module-install-dir))
+      mxtodo--module-install-dir))
+
   (defvar mxtodo--version
     (with-temp-buffer
       (insert-file-contents (or load-file-name byte-compile-current-file))
@@ -43,24 +54,23 @@
       (buffer-substring-no-properties (point) (point-at-eol)))
     "The version of this module.")
 
-  ;; URL should be a function of architecture and version, but let's assume architecture to start
-  (let* ((mxtodo-searcher-module-file (concat "mxtodo-searcher-" mxtodo--version ".so"))
-        (mxtodo-searcher-module-abs-file (expand-file-name mxtodo-searcher-module-file))
-        (mxtodo-searcher-module-install-path (file-name-as-directory "/usr/local/share/emacs/site-lisp"))
-        (mxtodo-searcher-module-install-file (concat mxtodo-searcher-module-install-path "mxtodo-searcher.so"))
-        (mxtodo-searcher-module-url))
-    (unless (file-exists-p mxtodo-searcher-module-file)
-      (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
+  ;; TODO: URL should be a function of architecture and version, but let's assume architecture to start
+  ;; TODO: in the case where the dynamic module already exists, we are not checking version and should
+  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so"))
+         (mxtodo-searcher-module-url))
+    (progn
+      (unless (file-exists-p mxtodo-searcher-module-install-file)
+        (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
+            (progn
+              (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
+              (message (concat "Copying local module to " mxtodo-searcher-module-install-file))
+              (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-install-file t))
           (progn
-            (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
-            (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-abs-file))
-        (progn
-          (setq mxtodo-searcher-module-url
-                (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
-          (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
-          (url-copy-file mxtodo-searcher-module-url (expand-file-name mxtodo-searcher-module-file))))
-      (message (concat "Copying module to: " mxtodo-searcher-module-install-file))
-      (copy-file mxtodo-searcher-module-abs-file mxtodo-searcher-module-install-file t))))
+            (setq mxtodo-searcher-module-url
+                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
+            (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
+            (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file))))
+      (add-to-list 'load-path mxtodo--module-install-dir))))
 
 (require 'mxtodo-searcher)
 
@@ -96,6 +106,7 @@
   (file-display-date-ts nil :readonly t :type ts)
   (file-last-update-ts nil :readonly t :type ts)
   (date-due-ts nil :type ts)
+  (date-completed-ts nil :type ts)
   (text nil :type string)
   (is-completed nil :type boolean))
 
@@ -159,7 +170,26 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
           (add-text-properties start-pos end-pos '(face mxtodo--due-date-face) due-date-str)
           due-date-str))
     ""))
-  
+
+(defface mxtodo--completed-date-face
+  '((t
+     :foreground "#28CD41"
+     :weight bold
+     ))
+  "Face for completed at dates."
+  :group 'mxtodo)
+
+(defun mxtodo--render-completed-date (date)
+  "Render a TODO completed date as a string."
+  (if (not (equal date nil))
+      (let* ((completed-date-str (format " // completed %s" (mxtodo--render-date date)))
+             (start-pos 0)
+             (end-pos (length completed-date-str)))
+        (progn
+          (add-text-properties start-pos end-pos '(face mxtodo--completed-date-face) completed-date-str)
+          completed-date-str))
+    ""))
+
 (defun mxtodo--render-is-completed (todo)
   "Render a checkbox indicating whether TODO is completed."
   (if (mxtodo-item-is-completed todo) "- [x]" "- [ ]"))
@@ -172,20 +202,13 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
   "Face for completed TODO items."
   :group 'mxtodo)
 
-(defun mxtodo--prettify-text (todo todo-str start-pos end-pos)
-  "Add properties to string TODO-STR."
-  (if (mxtodo-item-is-completed todo)
-      (progn
-        (add-text-properties start-pos end-pos '(face mxtodo--completed-face) todo-str)
-        todo-str)
-    todo-str))
-
 (defun mxtodo--visible-text (todo)
   "Construct the visible text portion of TODO text."
   (if (mxtodo-item-is-completed todo)
-      (format "%s %s"
+      (format "%s %s%s"
               (mxtodo--render-is-completed todo)
-              (mxtodo-item-text todo))
+              (mxtodo-item-text todo)
+              (mxtodo--render-completed-date (mxtodo-item-date-completed-ts todo)))
     (format "%s %s%s"
             (mxtodo--render-is-completed todo)
             (mxtodo-item-text todo)
@@ -200,22 +223,27 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
          (invisible-end-pos (length line-text))
          (todo-text-start-pos 6)
          (todo-text-end-pos (+ todo-text-start-pos (length (mxtodo-item-text todo)))))
-    (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
-    (mxtodo--prettify-text todo line-text todo-text-start-pos todo-text-end-pos)))
+    (progn
+      (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
+      (if (mxtodo-item-is-completed todo)
+          (add-text-properties todo-text-start-pos todo-text-end-pos '(face mxtodo--completed-face) line-text))
+      line-text)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
-  "Parse TODO-LINE string into a 3-element todo vector.
+  "Parse TODO-LINE string into a 4-element todo vector.
 The resulting vector contains an is-completed bool, the TODO text,
-and a due date.
+a due date, and a completed date.
 Consider the example todo-line: `- [ ] do something useful (due 2021-7-2)`.
-The resulting vector would contain [nil \"do something useful\" #s(ts ...)]."
-  (if (string-match "^- \\[\\(x\\|[[:blank:]]\\)\\] \\(.*?\\)\\(?: (due \\(.*\\))\\)?$" todo-line)
-      (let* ((completed-text (match-string 1 todo-line))
-             (todo-text (match-string 2 todo-line))
-             (is-completed (equal completed-text "x"))
-             (due-date (mxtodo--ts-date-from-string (match-string 3 todo-line))))
-        (vector todo-text is-completed due-date))
-    (vector todo-line nil nil)))
+The resulting vector would contain [nil \"do something useful\" #s(ts ...) nil]."
+  (let* ((_ (string-match "^- \\[\\(?1:x\\|[[:blank:]]\\)\\] \\(?2:.*?\\)\\(?: *(due \\(?3:[^)]+\\))\\)?\\(?: *(completed \\(?4:[^)]+\\))\\)?$" todo-line))
+         (completed-text (match-string 1 todo-line))
+         (todo-text (match-string 2 todo-line))
+         (due-date-str (match-string 3 todo-line))
+         (completed-date-str (match-string 4 todo-line))
+         (due-date (mxtodo--ts-date-from-string due-date-str))
+         (completed-date (mxtodo--ts-date-from-string completed-date-str))
+         (is-completed (equal completed-text "x")))
+    (vector todo-text is-completed due-date completed-date)))
 
 (defun mxtodo--file-last-modified (file-path)
   "Return the file last modified timestamp of the file at FILE-PATH.
@@ -231,9 +259,13 @@ The resulting timestamp is returned as a ts struct."
     (let* ((file-path (elt todo-vec 0))
            (file-line-number (elt todo-vec 1))
            (file-display-date-ts (mxtodo--display-date-from-file-path file-path))
-           (todo-text (elt todo-vec 2))
-           (file-last-update-ts (mxtodo--file-last-modified file-path)))
-      (seq-let [todo-text is-completed date-due] (mxtodo--extract-info-from-text todo-text)
+           (todo-line (elt todo-vec 2))
+           (file-last-update-ts (mxtodo--file-last-modified file-path))
+           (extracted-parts (mxtodo--extract-info-from-text todo-line))
+           (todo-text (elt extracted-parts 0))
+           (is-completed (elt extracted-parts 1))
+           (date-due (elt extracted-parts 2))
+           (completed-date (elt extracted-parts 3)))
         (make-mxtodo-item
          :file-path file-path
          :file-line-number file-line-number
@@ -241,7 +273,8 @@ The resulting timestamp is returned as a ts struct."
          :file-last-update-ts file-last-update-ts
          :text todo-text
          :is-completed is-completed
-         :date-due-ts date-due)))))
+         :date-due-ts date-due
+         :date-completed-ts completed-date))))
 
 (defun mxtodo--toggle-todo-completed (todo)
   "Toggle TODO's is-completed field."
@@ -249,6 +282,9 @@ The resulting timestamp is returned as a ts struct."
     (setf
      (mxtodo-item-is-completed todo)
      (not (mxtodo-item-is-completed todo)))
+    (if (mxtodo-item-is-completed todo)
+        (setf (mxtodo-item-date-completed-ts todo) (ts-now))
+      (setf (mxtodo-item-date-completed-ts todo) nil))
     todo))
 
 (defun mxtodo--find-invisible-region-in-line ()
@@ -277,15 +313,23 @@ The resulting timestamp is returned as a ts struct."
   (let ((date (mxtodo-item-date-due-ts todo)))
     (if (not (equal date nil))
         (format " (due %s)" (mxtodo--render-date date))
-    "")))
+      "")))
+
+(defun mxtodo--completed-date-str (todo)
+  "Serialize TODO due date."
+  (let ((date (mxtodo-item-date-completed-ts todo)))
+    (if (not (equal date nil))
+        (format " (completed %s)" (mxtodo--render-date date))
+      "")))
 
 (defun mxtodo--todo-str (todo)
   "Render a TODO as a string."
   (let* ((todo-line
-          (format "%s %s%s"
+          (format "%s %s%s%s"
                   (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
-                  (mxtodo--due-date-str todo))))
+                  (mxtodo--due-date-str todo)
+                  (mxtodo--completed-date-str todo))))
     todo-line))
 
 (defun mxtodo--todo-is-fresh-p (todo)
