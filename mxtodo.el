@@ -99,6 +99,9 @@
 (defvar mxtodo-hide-completed nil
   "Whether to hide completed TODO items.")
 
+(defvar mxtodo-hide-incomplete nil
+  "Whether to hide incomplete TODO items.")
+
 (cl-defstruct mxtodo-item
   "A data struct for TODO information."
   (file-path nil :readonly t :type string)
@@ -389,6 +392,13 @@ with incomplete todo items first, followed by completed todo items."
            (todo-xref (mxtodo--make-todo-xref todo)))
       (xref-pop-to-location todo-xref))))
 
+(defun mxtodo--show-todo-p (todo)
+  "Determine whether a particular TODO should be included."
+  (not
+   (or
+    (and mxtodo-hide-completed (mxtodo-item-is-completed todo))
+    (and mxtodo-hide-incomplete (not (mxtodo-item-is-completed todo))))))
+
 ;;;###autoload
 (defun mxtodo-make-todo-buffer (&optional buffer-name folder-path file-ext todo-pattern)
   "Construct a read-only todo buffer BUFFER-NAME.
@@ -419,7 +429,7 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
             (goto-char (point-min))
             (while sorted-todos
               (let ((todo (pop sorted-todos)))
-                (if (not (and mxtodo-hide-completed (mxtodo-item-is-completed todo)))
+                (if (mxtodo--show-todo-p todo)
                     (insert (mxtodo--render-todo todo) "\n"))))))
         (read-only-mode))
       (switch-to-buffer buffer-name)
@@ -539,12 +549,26 @@ If the specified date does not parse, an error is raised."
     (mxtodo-make-todo-buffer buffer-name)
     mxtodo-hide-completed))
 
+(defun mxtodo-toggle-hide-incomplete (&optional buffer-name)
+  "Toggle the global variable `mxtodo-hide-incomplete'."
+  (interactive)
+  (progn
+    (unless buffer-name
+      (setq buffer-name mxtodo-buffer-name))
+    (if mxtodo-hide-incomplete
+        (setq mxtodo-hide-incomplete nil)
+      (setq mxtodo-hide-incomplete t))
+    (mxtodo-make-todo-buffer buffer-name)
+    mxtodo-hide-incomplete))
+
+
 (define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
 (define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
 (define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
 (define-key mxtodo-mode-map (kbd "?") #'describe-mode)
 (define-key mxtodo-mode-map (kbd "+") #'mxtodo-create-todo)
 (define-key mxtodo-mode-map (kbd "H") #'mxtodo-toggle-hide-completed)
+(define-key mxtodo-mode-map (kbd "h") #'mxtodo-toggle-hide-incomplete)
 (define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)

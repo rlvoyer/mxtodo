@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - fix issue with native searcher module installation
 - add tracking for todo completion date
+- enable showing only completed items
 
 ## [0.2.1] - 2021-12-05
 - fixed downloading of searcher native module release artifact
