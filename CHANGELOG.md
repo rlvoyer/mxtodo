@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- make links styled and clickable
 - fix issue with native searcher module installation
 - add tracking for todo completion date
 - enable showing only completed items

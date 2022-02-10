@@ -76,7 +76,8 @@
 
 (defgroup mxtodo nil
   "mxtodo Markdown TODO manager."
-  :group 'tools)
+  :group 'tools
+  :link '(url-link "https://www.github.com/rlvoyer/mxtodo"))
 
 (defcustom mxtodo-file-extension ".md"
   "The file extension for TODO files."
@@ -111,7 +112,8 @@
   (date-due-ts nil :type ts)
   (date-completed-ts nil :type ts)
   (text nil :type string)
-  (is-completed nil :type boolean))
+  (is-completed nil :type boolean)
+  (links '() :type list))
 
 (defun mxtodo--gather-todos (&optional folder-path file-ext todo-pattern)
   "Gather todo items from files matching specified parameters.
@@ -217,6 +219,61 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
             (mxtodo-item-text todo)
             (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
 
+(defface mxtodo--link-text-face
+  '((t
+     :foreground "#F0DFAF"
+     :weight bold
+     :underline t
+     ))
+  "Face for link text."
+  :group 'mxtodo)
+
+(defface mxtodo--link-url-face
+  '((t
+     :foreground "#CC9393"
+     ))
+  "Face for link URLs."
+  :group 'mxtodo)
+
+(defconst mxtodo--checkbox-offset 6
+  "The length of the checkbox prefix on a rendered TODO item.")
+
+(defun mxtodo--open-link-url (link-url)
+  "A keymap for opening link URLs in a browser."
+  (lambda ()
+    (interactive)
+    (browse-url link-url)))
+
+(defun mxtodo--highlight-link (line-text link)
+  "Make the specified string LINE-TEXT clickable around LINK."
+  (let* ((link-text-start (+ mxtodo--checkbox-offset (cdr (assoc "text_start_offset" link))))
+         (link-text-len (length (cdr (assoc "text" link))))
+         (link-text-end (+ link-text-start link-text-len))
+         (lp (list 'face 'mxtodo--link-text-face
+                   'font-lock-multiline t))
+         (url-text (cdr (assoc "url" link)))
+         (url-text-start (+ mxtodo--checkbox-offset (cdr (assoc "url_start_offset" link))))
+         (url-text-len (length (cdr (assoc "url" link))))
+         (url-text-end (+ url-text-start url-text-len))
+         (up (list 'face 'mxtodo--link-url-face
+                   'font-lock-multiline t))
+         (span-start (+ mxtodo--checkbox-offset (cdr (assoc "start_offset" link))))
+         (span-len (cdr (assoc "length" link)))
+         (span-end (+ span-start span-len))
+         (km (make-sparse-keymap))
+         (link-opener (mxtodo--open-link-url url-text)))
+    (progn
+      (add-text-properties link-text-start link-text-end lp line-text)
+      (add-text-properties url-text-start url-text-end up line-text)
+      (define-key km (kbd "o") link-opener)
+      (put-text-property span-start span-end 'keymap km line-text))))
+
+(defun mxtodo--highlight-markdown-links (line-text links)
+  "Make the specified string LINE-TEXT clickable around all links in list LINKS."
+  (mapcar
+   (lambda (link) (mxtodo--highlight-link line-text link))
+   links))
+
 (defun mxtodo--render-todo (todo)
   "Render a TODO as a string. This string includes an invisible portion."
   (let* ((visible-text (mxtodo--visible-text todo))
@@ -230,6 +287,7 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
       (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
       (if (mxtodo-item-is-completed todo)
           (add-text-properties todo-text-start-pos todo-text-end-pos '(face mxtodo--completed-face) line-text))
+      (mxtodo--highlight-markdown-links line-text (mxtodo-item-links todo))
       line-text)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
@@ -254,30 +312,29 @@ This function extracts the last-modified timestamp from file attributes.
 The resulting timestamp is returned as a ts struct."
   (make-ts :unix (float-time (file-attribute-modification-time (file-attributes file-path)))))
 
-(defun mxtodo--make-todo-from-searcher-vec (todo-vec)
-  "Construct a todo-item from 3-element TODO-VEC."
-  (progn
-    (unless (equal (length todo-vec) 3)
-      (error "Expected a 3-element todo vec, but got %s" todo-vec))
-    (let* ((file-path (elt todo-vec 0))
-           (file-line-number (elt todo-vec 1))
-           (file-display-date-ts (mxtodo--display-date-from-file-path file-path))
-           (todo-line (elt todo-vec 2))
-           (file-last-update-ts (mxtodo--file-last-modified file-path))
-           (extracted-parts (mxtodo--extract-info-from-text todo-line))
-           (todo-text (elt extracted-parts 0))
-           (is-completed (elt extracted-parts 1))
-           (date-due (elt extracted-parts 2))
-           (completed-date (elt extracted-parts 3)))
-        (make-mxtodo-item
-         :file-path file-path
-         :file-line-number file-line-number
-         :file-display-date-ts file-display-date-ts
-         :file-last-update-ts file-last-update-ts
-         :text todo-text
-         :is-completed is-completed
-         :date-due-ts date-due
-         :date-completed-ts completed-date))))
+(defun mxtodo--make-todo-from-searcher-alist (todo-alist)
+  "Construct a todo-item from mxtodo-searcher alist."
+  (let* ((file-path (cdr (assoc "file_path" todo-alist)))
+         (file-line-number (cdr (assoc "line_number" todo-alist)))
+         (file-display-date-ts (make-ts :unix (cdr (assoc "display_date" todo-alist))))
+         (file-last-update-ts (mxtodo--file-last-modified file-path))
+         (todo-text (cdr (assoc "text" todo-alist)))
+         (is-completed (cdr (assoc "is_completed" todo-alist)))
+         (date-due-val (cdr (assoc "date_due" todo-alist)))
+         (date-due (if date-due-val (make-ts :unix date-due-val) nil))
+         (date-completed-val (cdr (assoc "date_completed" todo-alist)))
+         (date-completed (if date-completed-val (make-ts :unix date-completed-val)))
+         (links (cdr (assoc "links" todo-alist))))
+    (make-mxtodo-item
+     :file-path file-path
+     :file-line-number file-line-number
+     :file-display-date-ts file-display-date-ts
+     :file-last-update-ts file-last-update-ts
+     :text todo-text
+     :is-completed is-completed
+     :date-due-ts date-due
+     :date-completed-ts date-completed
+     :links links)))
 
 (defun mxtodo--toggle-todo-completed (todo)
   "Toggle TODO's is-completed field."
@@ -418,7 +475,7 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
     (unless todo-pattern (setq todo-pattern mxtodo-pattern-str))
     (let* ((todos
             (mapcar
-             (lambda (v) (mxtodo--make-todo-from-searcher-vec v))
+             (lambda (v) (mxtodo--make-todo-from-searcher-alist v))
              (mxtodo--gather-todos folder-path file-ext todo-pattern)))
            (sorted-todos (mxtodo--sort-todos todos)))
       (with-current-buffer (get-buffer-create buffer-name)
