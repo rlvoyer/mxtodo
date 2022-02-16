@@ -353,16 +353,13 @@
     (should (equal actual expected))))
 
 (ert-deftest test-creating-a-todo-new-notefile ()
-  (let* ((test-buffer (make-temp-name mxtodo-buffer-name))
-         (notes-dir (make-test-notes-dir))
+  (let* ((notes-dir (make-test-notes-dir))
          (todo-text "Water the garden")
          (due-date (ts-adjust 'day +7 (ts-now))))
     (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil)))))
 
 (ert-deftest test-adding-a-todo-works-existing-notefile ()
-  (let* ((test-buffer (make-temp-name mxtodo-buffer-name))
-         (notes-dir (make-test-notes-dir))
-         (notes-file (make-test-notes-file notes-dir 1))
+  (let* ((notes-dir (make-test-notes-dir))
          (todo-text "Take out the garbage")
          (due-date (ts-adjust 'day +7 (ts-now))))
     (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil)))))
