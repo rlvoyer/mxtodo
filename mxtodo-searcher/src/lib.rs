@@ -2,6 +2,9 @@
 #![feature(result_flattening)]
 
 #[macro_use]
+extern crate comp;
+
+#[macro_use]
 extern crate failure;
 
 use std::ffi::OsString;
@@ -77,7 +80,10 @@ impl IntoLisp<'_> for Link {
             ),
         )?;
 
-        env.call("pairlis", &[keys.into_lisp(env)?, values.into_lisp(env)?])
+        env.call(
+            "cl-pairlis",
+            &[keys.into_lisp(env)?, values.into_lisp(env)?],
+        )
     }
 }
 
@@ -111,6 +117,30 @@ pub struct Todo {
     text: String,
     is_completed: bool,
     links: Vec<Link>,
+}
+
+impl Todo {
+    pub fn new(
+        file_path: String,
+        line_number: u64,
+        display_date: DateTime<Utc>,
+        date_due: Option<DateTime<Utc>>,
+        date_completed: Option<DateTime<Utc>>,
+        text: String,
+        is_completed: bool,
+        links: Vec<Link>,
+    ) -> Todo {
+        Todo {
+            file_path,
+            line_number,
+            display_date,
+            date_due,
+            date_completed,
+            text,
+            is_completed,
+            links,
+        }
+    }
 }
 
 fn to_lisp(env: &Env, links: Vec<Link>) -> emacs::Result<Value> {
@@ -148,7 +178,10 @@ impl IntoLisp<'_> for Todo {
             ),
         )?;
 
-        env.call("pairlis", &[keys.into_lisp(env)?, values.into_lisp(env)?])
+        env.call(
+            "cl-pairlis",
+            &[keys.into_lisp(env)?, values.into_lisp(env)?],
+        )
     }
 }
 
@@ -168,6 +201,11 @@ pub enum MxtodoSearcherError {
     SearchError(String),
     #[fail(display = "An IO error occurred: {:?}", _0)]
     UnexpectedIOError(String),
+    #[fail(
+        display = "An error occurred converting the Rust object in an elisp object: {:?}",
+        _0
+    )]
+    UnexpectedRustToLispConversionError(String),
     #[fail(display = "The note file had an unexpected file name: {:?}", _0)]
     UnexpectedFileName(String),
     #[fail(display = "Unable to parse the TODO line: {:?}", _0)]
@@ -202,28 +240,31 @@ fn extract_links(todo_text: &str) -> Vec<Link> {
 
     let links: Vec<Link> = MARKDOWN_LINK
         .captures_iter(todo_text)
-        .map(|capture| {
-            let m = capture.get(0).unwrap();
-            let start_offset = m.start();
-            let length = m.end() - start_offset;
-
-            let (text, text_start_offset) = capture
+        .flat_map(|capture| {
+            let text_and_start_offset = capture
                 .name("link_text")
-                .map(|t| (t.as_str().to_string(), t.start()))
-                .unwrap();
+                .map(|t| (t.as_str().to_string(), t.start()));
 
-            let (url, url_start_offset) = capture
+            let url_and_start_offset = capture
                 .name("link_url")
-                .map(|u| (u.as_str().to_string(), u.start()))
-                .unwrap();
+                .map(|u| (u.as_str().to_string(), u.start()));
 
-            Link {
-                start_offset,
-                text_start_offset,
-                url_start_offset,
-                length,
-                text,
-                url,
+            option! {
+                let match_ <- capture.get(0);
+                let start_offset = match_.start();
+                let length = match_.end() - start_offset;
+
+                let (text, text_start_offset) <- text_and_start_offset;
+                let (url, url_start_offset) <- url_and_start_offset;
+
+                Link {
+                    start_offset,
+                    text_start_offset,
+                    url_start_offset,
+                    length,
+                    text,
+                    url,
+                }
             }
         })
         .collect();
@@ -366,12 +407,10 @@ fn search_directory(
         ))?;
     }
 
-    let todos_lisp: Vec<Value> = todos
-        .into_iter()
-        .map(|todo| todo.into_lisp(env).unwrap())
-        .collect();
+    let todos_lisp: emacs::Result<Vec<Value>> =
+        todos.into_iter().map(|todo| todo.into_lisp(env)).collect();
 
-    env.vector(&todos_lisp)
+    env.vector(&todos_lisp?)
 }
 
 #[cfg(test)]
@@ -431,19 +470,31 @@ mod tests {
     fn search_directory_returns_the_expected_matches() -> Result<(), String> {
         let dir =
             tempdir().map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
-        let file_path: std::path::PathBuf = dir.path().join("my-todo-file.md");
+        let file_path: std::path::PathBuf = dir.path().join("2022-2-11.md");
         let mut file1 = File::create(&file_path)
             .map_err(|e| format!("Unable to create a temp file: {:?}", e))?;
         writeln!(file1, "- [ ] do your taxes")
             .map_err(|e| format!("Unable to write to temp file: {:?}", e))?;
 
         let pattern = r"^- ?\[[Xx ]\] ".to_string();
-        let expected: Vec<TodoMatch> = vec![TodoMatch::new(
-            file_path.into_os_string(),
-            1,
-            "- [ ] do your taxes",
-        )];
-        let actual = _search_directory(
+
+        let expected: TodosAndErrors = (
+            vec![Todo::new(
+                file_path.into_os_string().to_string_lossy().to_string(),
+                1,
+                Utc.ymd(2022, 2, 11).and_hms(0, 0, 0),
+                None,
+                None,
+                "do your taxes".to_string(),
+                false,
+                vec![],
+            )],
+            vec![],
+        );
+
+        let (expected_todos, _) = expected;
+
+        let (actual_todos, actual_errors) = _search_directory(
             dir.into_path()
                 .into_os_string()
                 .to_string_lossy()
@@ -453,7 +504,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(expected, actual);
+        assert_eq!(expected_todos, actual_todos);
+        assert!(actual_errors.is_empty());
 
         Ok(())
     }
@@ -462,7 +514,7 @@ mod tests {
     fn extract_links_returns_no_links_when_there_are_none() -> Result<(), String> {
         let text = "- [ ] read a book";
         let expected: Vec<Link> = vec![];
-        let actual = extract_links_(text);
+        let actual = extract_links(text);
         assert_eq!(expected, actual);
 
         Ok(())
@@ -473,6 +525,8 @@ mod tests {
         let text = "- [ ] read [the news](www.thenews.com)";
         let expected = vec![Link {
             start_offset: 11,
+            text_start_offset: 12,
+            url_start_offset: 22,
             length: 27,
             text: "the news".to_string(),
             url: "www.thenews.com".to_string(),
@@ -490,12 +544,16 @@ mod tests {
         let expected = vec![
             Link {
                 start_offset: 11,
+                text_start_offset: 12,
+                url_start_offset: 22,
                 length: 27,
                 text: "the news".to_string(),
                 url: "www.thenews.com".to_string(),
             },
             Link {
                 start_offset: 43,
+                text_start_offset: 44,
+                url_start_offset: 52,
                 length: 23,
                 text: "a book".to_string(),
                 url: "www.abook.com".to_string(),

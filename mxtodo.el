@@ -543,9 +543,8 @@ If the specified date does not parse, an error is raised."
     (error
      (cl-values nil (format "Unable to parse specified date string %s; date must be ISO-8601-formatted." date-str)))))
 
-;;;###autoload
-(defun mxtodo-create-todo (&optional folder-path file-name buffer-name todo-text due-date-ts)
-  "Add a todo to today's daily note, updating todo buffer with name BUFFER-NAME."
+(defun mxtodo--create-todo (&optional folder-path file-name todo-text due-date-ts)
+  "Create a todo-item in the notefile named FILE-NAME in directory FOLDER-PATH."
   (interactive)
   (save-excursion
     (progn
@@ -553,8 +552,6 @@ If the specified date does not parse, an error is raised."
         (setq folder-path mxtodo-folder-path))
       (unless file-name
         (setq file-name (mxtodo-create-daily-note folder-path)))
-      (unless buffer-name
-        (setq buffer-name mxtodo-buffer-name))
       (unless todo-text
         (setq todo-text (read-string "Enter the TODO text: ")))
       (unless due-date-ts
@@ -582,9 +579,16 @@ If the specified date does not parse, an error is raised."
           (progn
             (newline)
             (mxtodo--write-todo-to-file todo)
-            (mxtodo-make-todo-buffer buffer-name folder-path)
             todo))))))
 
+;;;###autoload
+(defun mxtodo-create-todo (&optional folder-path file-name buffer-name todo-text due-date-ts)
+  "Add a todo to today's daily note, updating todo buffer with name BUFFER-NAME."
+  (interactive)
+  (let ((todo (mxtodo--create-todo folder-path file-name todo-text due-date-ts)))
+    (progn
+      (mxtodo-make-todo-buffer buffer-name folder-path)
+      todo)))
 
 ;;;###autoload
 (defun mxtodo-today ()
