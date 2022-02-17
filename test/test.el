@@ -380,11 +380,11 @@
 (ert-deftest test-search-directory-returns-directory-not-found-if-dir-does-not-exist ()
   (let ((notes-dir "foo/bar/baz"))
     (should-error
-     (actual (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]"))
+     (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]")
      :type 'directory-not-found)))
 
 (ert-deftest test-search-directory-returns-path-error-if-dir-param-is-file ()
   (let ((tmp-file (make-temp-file "notes")))
     (should-error
-     (actual (mxtodo-searcher-search-directory tmp-file ".md" "^- ?\\[[Xx ]\\]"))
+     (mxtodo-searcher-search-directory tmp-file ".md" "^- ?\\[[Xx ]\\]")
      :type 'path-is-not-a-directory)))
