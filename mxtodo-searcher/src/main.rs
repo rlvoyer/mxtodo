@@ -38,7 +38,7 @@ fn main() -> Result<(), Error> {
     let file_ext = opts.file_ext.unwrap_or(DEFAULT_EXTENSION.to_string());
     let directory = opts.directory;
 
-    let (todos, errors) = _search_directory(directory.clone(), file_ext, pattern)
+    let (todos, errors) = _search_directory(&directory, &file_ext, &pattern)
         .map_err(|error| MxtodoSearchError::DirectorySearchError { directory, error })?;
 
     if errors.len() > 0 {

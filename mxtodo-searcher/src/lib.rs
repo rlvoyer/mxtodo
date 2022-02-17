@@ -30,7 +30,7 @@ fn init(env: &Env) -> emacs::Result<Value<'_>> {
     env.message("Done loading!")
 }
 
-fn files_to_search(directory: String, file_ext: String) -> Vec<OsString> {
+fn files_to_search(directory: &str, file_ext: &str) -> Vec<OsString> {
     WalkDir::new(&directory)
         .min_depth(1)
         .follow_links(true)
@@ -210,6 +210,13 @@ pub enum MxtodoSearcherError {
     UnexpectedFileName(String),
     #[fail(display = "Unable to parse the TODO line: {:?}", _0)]
     TodoParsingError(String),
+    #[fail(display = "The specified directory does not exist: {:?}", _0)]
+    DirectoryNotFound(String),
+    #[fail(
+        display = "The specified path is a file but should be a directory: {:?}",
+        _0
+    )]
+    InvalidPathParameter(String),
 }
 
 fn datetime_from_ymd_str(ymd_str: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
@@ -343,15 +350,34 @@ impl Todo {
 type TodosAndErrors = (Vec<Todo>, Vec<MxtodoSearcherError>);
 
 pub fn _search_directory(
-    directory: String,
-    file_ext: String,
-    pattern: String,
+    directory: &str,
+    file_ext: &str,
+    pattern: &str,
 ) -> Result<TodosAndErrors, MxtodoSearcherError> {
+    if !Path::new(directory).exists() {
+        return Err(MxtodoSearcherError::DirectoryNotFound(
+            directory.to_string(),
+        ));
+    }
+
+    let md = Path::new(directory).metadata().map_err(|_| {
+        MxtodoSearcherError::UnexpectedIOError(format!(
+            "Error reading path metadata on {:?}",
+            directory
+        ))
+    })?;
+
+    if !md.is_dir() {
+        return Err(MxtodoSearcherError::InvalidPathParameter(
+            directory.to_string(),
+        ));
+    }
+
     let matcher = RegexMatcherBuilder::new()
         .multi_line(true)
         .line_terminator(Some(b'\n'))
         .build(&pattern)
-        .map_err(|_e| MxtodoSearcherError::MalformedRegexPattern(pattern))?;
+        .map_err(|_e| MxtodoSearcherError::MalformedRegexPattern(pattern.to_string()))?;
 
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(b'\x00'))
@@ -390,6 +416,12 @@ pub fn _search_directory(
     Ok((todos, errors))
 }
 
+emacs::define_errors! {
+    directory_not_found "The specified directory does not exist" (file_error)
+    path_is_not_a_directory "The specified path is not a directory" (file_error)
+    searcher_error "An expected error occurred"
+}
+
 /// This searches `directory` for files with extension `file_ext` returning a list of todos as 2-element vectors.
 #[defun]
 fn search_directory(
@@ -398,7 +430,20 @@ fn search_directory(
     file_ext: String,
     pattern: String,
 ) -> emacs::Result<Value> {
-    let (todos, errors) = _search_directory(directory, file_ext, pattern)?;
+    let result = _search_directory(&directory, &file_ext, &pattern);
+    if result.is_err() {
+        match result {
+            Err(MxtodoSearcherError::DirectoryNotFound(_)) => {
+                return env.signal(directory_not_found, (directory,))
+            }
+            Err(MxtodoSearcherError::InvalidPathParameter(_)) => {
+                return env.signal(path_is_not_a_directory, (directory,))
+            }
+            _ => return env.signal(searcher_error, (directory, file_ext, pattern)),
+        }
+    }
+
+    let (todos, errors) = result.unwrap();
 
     if errors.len() > 0 {
         env.message(format!(
@@ -431,13 +476,7 @@ mod tests {
             .map_err(|e| format!("Unable to write to temp file: {:?}", e))?;
 
         let expected = vec![file_path.into_os_string()];
-        let actual = files_to_search(
-            dir.into_path()
-                .into_os_string()
-                .to_string_lossy()
-                .to_string(),
-            ".md".to_string(),
-        );
+        let actual = files_to_search(&dir.into_path().into_os_string().to_string_lossy(), ".md");
         assert_eq!(expected, actual);
 
         Ok(())
@@ -454,13 +493,7 @@ mod tests {
             .map_err(|e| format!("Unable to write to temp file: {:?}", e))?;
 
         let expected: Vec<OsString> = vec![];
-        let actual = files_to_search(
-            dir.into_path()
-                .into_os_string()
-                .to_string_lossy()
-                .to_string(),
-            ".md".to_string(),
-        );
+        let actual = files_to_search(&dir.into_path().into_os_string().to_string_lossy(), ".md");
         assert_eq!(expected, actual);
 
         Ok(())
@@ -495,12 +528,9 @@ mod tests {
         let (expected_todos, _) = expected;
 
         let (actual_todos, actual_errors) = _search_directory(
-            dir.into_path()
-                .into_os_string()
-                .to_string_lossy()
-                .to_string(),
-            ".md".to_string(),
-            pattern,
+            &dir.into_path().into_os_string().to_string_lossy(),
+            ".md",
+            &pattern,
         )
         .unwrap();
 

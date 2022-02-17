@@ -364,10 +364,27 @@
          (due-date (ts-adjust 'day +7 (ts-now))))
     (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil)))))
 
-(ert-deftest test-search-directory ()
+(ert-deftest test-search-directory-returns-the-expected-results ()
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (actual (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]")))
     (progn
       (should (equal (length actual) 1))
       (should (equal notes-file (cdr (assoc "file_path" (elt actual 0))))))))
+
+(ert-deftest test-search-directory-returns-wrong-type-error-if-dir-is-nil ()
+  (should-error
+   (mxtodo-searcher-search-directory nil ".md" "^- ?\\[[Xx ]\\]")
+   :type 'wrong-type-argument))
+
+(ert-deftest test-search-directory-returns-directory-not-found-if-dir-does-not-exist ()
+  (let ((notes-dir "foo/bar/baz"))
+    (should-error
+     (actual (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]"))
+     :type 'directory-not-found)))
+
+(ert-deftest test-search-directory-returns-path-error-if-dir-param-is-file ()
+  (let ((tmp-file (make-temp-file "notes")))
+    (should-error
+     (actual (mxtodo-searcher-search-directory tmp-file ".md" "^- ?\\[[Xx ]\\]"))
+     :type 'path-is-not-a-directory)))
