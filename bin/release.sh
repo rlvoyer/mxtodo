@@ -118,6 +118,7 @@ update_package_version $RELEASE_VERSION
 capture_unreleased_changes_from_changelog $RELEASE_VERSION > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp $HERE/../CHANGELOG.md
 git add $HERE/../mxtodo.el $HERE/../CHANGELOG.md $HERE/../mxtodo-searcher/Cargo.toml && \
     git commit -m "Updated version and CHANGELOG for release $RELEASE_VERSION."
+git push
 
 TAG="v$RELEASE_VERSION"
 
