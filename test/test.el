@@ -163,27 +163,6 @@
       (should (equal expected-month actual-month))
       (should (equal expected-day actual-day)))))
 
-
-;; TODO: fix this test
-;; (ert-deftest test-make-todo-from-temp-file-line ()
-;;   "Tests that a TODO can be constructed from a temp file line."
-;;   (let* ((notes-dir (make-test-notes-dir))
-;;          (notes-file (make-test-notes-file notes-dir 1))
-;;          (expected (make-mxtodo-item :file-path notes-file
-;;                            :file-line-number 10
-;;                            :file-display-date-ts (make-ts :year 2021
-;;                                                           :month 6
-;;                                                           :day 24
-;;                                                           :hour 0
-;;                                                           :minute 0
-;;                                                           :second 0)
-;;                            :file-last-update (mxtodo--file-last-modified notes-file)
-;;                            :text "write some unit tests"
-;;                            :is-completed t))
-;;         (actual
-;;          (mxtodo--make-todo-from-temp-file-line  "/Users/robertvoyer/Documents/Notes/2021-6-24.md	10	- [x] write some unit tests	1624637870")))
-;;     (should (equal expected actual))))
-
 (defun todo-text-no-properties (rendered-todo-item)
   "Test rendering RENDERED-TODO-ITEM as a string with no properties."
   (substring-no-properties rendered-todo-item 0 (next-single-property-change 0 'invisible rendered-todo-item)))
