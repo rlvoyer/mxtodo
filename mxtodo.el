@@ -428,8 +428,12 @@ with incomplete todo items first, followed by completed todo items."
   (let* ((todos-sorted
           (cl-sort (copy-tree todos) 'ts> :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
          (todos-separated
-          (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos-sorted)))
-    (-flatten todos-separated)))
+          (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos-sorted))
+         (todos-incomplete (car todos-separated))
+         (todos-complete (nth 1 todos-separated))
+         (default-date (ts-apply :year 1970 (ts-now)))
+         (todos-completed-sorted (cl-sort (copy-tree todos-complete) 'ts> :key (lambda (x) (or (mxtodo-item-date-completed-ts x) default-date)))))
+    (-flatten (list todos-incomplete todos-completed-sorted))))
 
 (defun mxtodo--make-todo-xref (todo)
   "Make an xref from TODO."
