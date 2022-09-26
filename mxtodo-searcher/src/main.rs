@@ -42,7 +42,10 @@ fn main() -> Result<(), Error> {
         .map_err(|error| MxtodoSearchError::DirectorySearchError { directory, error })?;
 
     if errors.len() > 0 {
-       eprintln!("Encountered {} errors when searching for TODOs", errors.len()); 
+        eprintln!("Encountered {} errors when searching for TODOs", errors.len());
+        for error in errors {
+            eprintln!("{}", error)
+        }
     }
     
     for todo in todos {

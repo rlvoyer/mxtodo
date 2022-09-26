@@ -12,7 +12,7 @@ use std::io;
 use std::path::Path;
 
 use chrono::serde::{ts_seconds, ts_seconds_option};
-use chrono::{offset::TimeZone, DateTime, NaiveDate, Utc};
+use chrono::{offset::TimeZone, DateTime, Utc, NaiveDate, NaiveDateTime};
 use emacs::{defun, Env, IntoLisp, Value};
 use grep::{regex::RegexMatcherBuilder, searcher::BinaryDetection, searcher::SearcherBuilder};
 use itertools::{Either, Itertools};
@@ -185,6 +185,7 @@ impl IntoLisp<'_> for Todo {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct TodoInfo {
     is_completed: bool,
     text: String,
@@ -193,8 +194,10 @@ pub struct TodoInfo {
     links: Vec<Link>,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, PartialEq)]
 pub enum MxtodoSearcherError {
+    #[fail(display = "Malformed date string: {:?}", _0)]
+    MalformedDateString(String),
     #[fail(display = "Malformed regular expression: {:?}", _0)]
     MalformedRegexPattern(String),
     #[fail(display = "A search error occurred: {:?}", _0)]
@@ -206,8 +209,6 @@ pub enum MxtodoSearcherError {
         _0
     )]
     UnexpectedRustToLispConversionError(String),
-    #[fail(display = "The note file had an unexpected file name: {:?}", _0)]
-    UnexpectedFileName(String),
     #[fail(display = "Unable to parse the TODO line: {:?}", _0)]
     TodoParsingError(String),
     #[fail(display = "The specified directory does not exist: {:?}", _0)]
@@ -221,11 +222,18 @@ pub enum MxtodoSearcherError {
 
 fn datetime_from_ymd_str(ymd_str: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
     let date = NaiveDate::parse_from_str(ymd_str, "%Y-%m-%d")
-        .map_err(|_| MxtodoSearcherError::UnexpectedFileName(ymd_str.to_string()))?;
+        .map_err(|_| MxtodoSearcherError::MalformedDateString(ymd_str.to_string()))?;
 
     let datetime = date.and_hms(0, 0, 0);
 
     Ok(Utc.from_local_datetime(&datetime).unwrap())
+}
+
+fn utc_datetime_from_date_str_with_optional_time(date_str: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
+    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ")
+        .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map(|dt| dt.and_hms(0, 0, 0)))
+        .map_err(|_| MxtodoSearcherError::MalformedDateString(date_str.to_string()))
+        .map(|datetime| Utc.from_utc_datetime(&datetime))
 }
 
 fn display_date_from_file_path(file_path: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
@@ -298,12 +306,12 @@ fn extract_info(todo_line: &str) -> Result<TodoInfo, MxtodoSearcherError> {
 
             let date_due = captures
                 .name("date_due")
-                .map(|m| datetime_from_ymd_str(m.as_str()))
+                .map(|m| utc_datetime_from_date_str_with_optional_time(m.as_str()))
                 .transpose()?;
 
             let date_completed = captures
                 .name("date_completed")
-                .map(|m| datetime_from_ymd_str(m.as_str()))
+                .map(|m| utc_datetime_from_date_str_with_optional_time(m.as_str()))
                 .transpose()?;
 
             let links = extract_links(&text);
@@ -541,6 +549,30 @@ mod tests {
     }
 
     #[test]
+    fn extract_info_returns_the_correct_due_date_in_utc() -> Result<(), String> {
+        let text = "ride a boat".to_string();
+        let is_completed = false;
+        let date_due = Some(Utc.ymd(2022, 8, 6).and_hms(0, 0, 0));
+        let date_completed = None;
+        let links: Vec<Link> = vec![];
+        let todo_line = format!("- [ ] {text} (due 2022-08-06)", text=text);
+
+        let expected: TodoInfo = TodoInfo {
+            is_completed,
+            text,
+            date_due,
+            date_completed,
+            links
+        };
+
+        let actual = extract_info(&todo_line).unwrap();
+
+        assert_eq!(expected, actual);
+        
+        Ok(())
+    }
+    
+    #[test]
     fn extract_links_returns_no_links_when_there_are_none() -> Result<(), String> {
         let text = "- [ ] read a book";
         let expected: Vec<Link> = vec![];
@@ -591,6 +623,37 @@ mod tests {
         ];
 
         let actual = extract_links(text);
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_well_formed_date_str_returns_a_utc_datetime() -> Result<(), String>  {
+        let expected = Utc.ymd(2022, 9, 25).and_hms(0, 0, 0);
+        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25").unwrap();
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_well_formed_datetime_str_returns_a_utc_datetime() -> Result<(), String>  {
+        let expected = Utc.ymd(2022, 9, 25).and_hms(0, 0, 0);
+        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25T00:00:00Z").unwrap();
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_malformed_date_str_returns_an_error() -> Result<(), String>  {
+        let expected = MxtodoSearcherError::MalformedDateString("foo bar baz today".to_string());
+        let actual = utc_datetime_from_date_str_with_optional_time("foo bar baz today")
+            .unwrap_err();
+
         assert_eq!(expected, actual);
 
         Ok(())

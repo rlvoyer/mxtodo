@@ -4,7 +4,7 @@
 
 ;; Author: Robert Voyer <robert.voyer@gmail.com>
 ;; Version: 0.2.2
-;; Package-Requires: ((emacs "27.1") (dash "2.19.0") (f "0.20.0") (ts "0.2"))
+;; Package-Requires: ((emacs "27.1") (dash "2.19.0") (f "0.20.0") (ts "1.2.2"))
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
 
@@ -94,6 +94,16 @@
   :type 'string
   :group 'mxtodo)
 
+(defcustom mxtodo-date-render-format "%Y-%-m-%-d"
+  "The date format to use when rendering dates in the mxtodo buffer."
+  :type 'string
+  :group 'mxtodo)
+
+(defcustom mxtodo-date-serialization-format "%Y-%m-%dT%H:%M:%S"
+  "The date format to use when serializing dates in TODO files."
+  :type 'string
+  :group 'mxtodo)
+
 (defconst mxtodo-buffer-name "*todo-list*"
   "The name of the TODO search results buffer.")
 
@@ -152,9 +162,9 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
     (mxtodo--ts-date-from-string display-date-str)))
 
 (defun mxtodo--render-date (date)
-  "Render a TODO date as a string."
+  "Render a TODO date as a string for viewing in the TODO buffer."
   (if (not (equal date nil))
-      (ts-format "%Y-%-m-%-d" date)
+      (ts-format mxtodo-date-render-format date)
     ""))
 
 (defface mxtodo--due-date-face
@@ -368,28 +378,32 @@ The resulting timestamp is returned as a ts struct."
      (progn (forward-visible-line 0) (point))
      (progn (forward-visible-line 1) (point)))))
 
-(defun mxtodo--due-date-str (todo)
+(defun mxtodo--serialize-date (datetime)
+  "Serialize a ts date as an ISO-8601 datetime formatted string."
+  (ts-format "%Y-%m-%dT%H:%M:%SZ" datetime))
+
+(defun mxtodo--serialize-due-date-str (todo)
   "Serialize TODO due date."
   (let ((date (mxtodo-item-date-due-ts todo)))
     (if (not (equal date nil))
-        (format " (due %s)" (mxtodo--render-date date))
+        (format " (due %s)" (mxtodo--serialize-date date))
       "")))
 
-(defun mxtodo--completed-date-str (todo)
+(defun mxtodo--serialize-completed-date-str (todo)
   "Serialize TODO due date."
   (let ((date (mxtodo-item-date-completed-ts todo)))
     (if (not (equal date nil))
-        (format " (completed %s)" (mxtodo--render-date date))
+        (format " (completed %s)" (mxtodo--serialize-date date))
       "")))
 
-(defun mxtodo--todo-str (todo)
-  "Render a TODO as a string."
+(defun mxtodo--serialize-as-str (todo)
+  "Serialize a TODO as a string."
   (let* ((todo-line
-          (format "%s %s%s%s"
+          (format "%s %s%s%s\n"
                   (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
-                  (mxtodo--due-date-str todo)
-                  (mxtodo--completed-date-str todo))))
+                  (mxtodo--serialize-due-date-str todo)
+                  (mxtodo--serialize-completed-date-str todo))))
     todo-line))
 
 (defun mxtodo--todo-is-fresh-p (todo)
@@ -400,8 +414,8 @@ The resulting timestamp is returned as a ts struct."
        (mxtodo-item-file-last-update-ts todo)
        (mxtodo--file-last-modified file-path)))))
 
-(defun mxtodo--write-todo-to-file (todo)
-  "Persist a TODO from memory back to its source file."
+(defun mxtodo--persist-todo (todo)
+  "Persist a TODO from memory back to its notes file."
   (progn
     (let ((todo-file-path (mxtodo-item-file-path todo)))
       (if (mxtodo--todo-is-fresh-p todo)
@@ -411,7 +425,7 @@ The resulting timestamp is returned as a ts struct."
               (goto-char (point-min))
               (forward-line (1- (mxtodo-item-file-line-number todo)))
               (mxtodo--delete-current-line)
-              (insert (mxtodo--todo-str todo) "\n")
+              (insert (mxtodo--serialize-as-str todo))
               (save-buffer)))
         (error "the file containing TODO has been modified since the last read; refresh the todo buffer.")))))
 
@@ -504,7 +518,7 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
   (with-current-buffer buffer-name
     (let ((todo (mxtodo--toggle-todo-completed (mxtodo--read-todo-from-line))))
       (progn
-        (mxtodo--write-todo-to-file todo)
+        (mxtodo--persist-todo todo)
         (mxtodo-make-todo-buffer buffer-name))))
   nil)
 
@@ -582,7 +596,7 @@ If the specified date does not parse, an error is raised."
                      :is-completed nil)))
           (progn
             (newline)
-            (mxtodo--write-todo-to-file todo)
+            (mxtodo--persist-todo todo)
             todo))))))
 
 ;;;###autoload

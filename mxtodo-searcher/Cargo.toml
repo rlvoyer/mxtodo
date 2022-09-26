@@ -17,7 +17,7 @@ name = "mxtodo_search"
 path = "src/main.rs"
 
 [dependencies]
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.20", features = ["serde"] }
 clap = { version = "3.0.0-beta.5", features = ["derive"] }
 comp = "0.2.1"
 emacs = "0.18"
