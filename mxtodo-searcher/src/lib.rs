@@ -658,4 +658,28 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn extract_info_returns_the_correct_completed_date_in_utc() -> Result<(), String> {
+        let text = "add some details for Jira ticket".to_string();
+        let is_completed = true;
+        let date_due = None;
+        let date_completed = Some(Utc.ymd(2023, 6, 28).and_hms(10, 19, 13));
+        let links: Vec<Link> = vec![];
+        let todo_line = format!("- [x] {text} (completed 2023-06-28T10:19:13Z)", text=text);
+
+        let expected: TodoInfo = TodoInfo {
+            is_completed,
+            text,
+            date_due,
+            date_completed,
+            links
+        };
+
+        let actual = extract_info(&todo_line).unwrap();
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
 }
