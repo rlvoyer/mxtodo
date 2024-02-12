@@ -12,7 +12,7 @@ use std::io;
 use std::path::Path;
 
 use chrono::serde::{ts_seconds, ts_seconds_option};
-use chrono::{offset::TimeZone, DateTime, Utc, NaiveDate, NaiveDateTime};
+use chrono::{offset::TimeZone, DateTime, LocalResult, NaiveDate, NaiveDateTime, Utc};
 use emacs::{defun, Env, IntoLisp, Value};
 use grep::{regex::RegexMatcherBuilder, searcher::BinaryDetection, searcher::SearcherBuilder};
 use itertools::{Either, Itertools};
@@ -105,6 +105,15 @@ impl TodoMatch {
 }
 
 #[derive(Eq, PartialEq, Debug, Clone, Serialize)]
+pub struct Tag(String);
+
+impl IntoLisp<'_> for Tag {
+    fn into_lisp(self, env: &Env) -> emacs::Result<Value<'_>> {
+        self.0.into_lisp(env)
+    }
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Serialize)]
 pub struct Todo {
     file_path: String,
     line_number: u64,
@@ -117,6 +126,7 @@ pub struct Todo {
     text: String,
     is_completed: bool,
     links: Vec<Link>,
+    tags: Vec<Tag>,
 }
 
 impl Todo {
@@ -129,6 +139,7 @@ impl Todo {
         text: String,
         is_completed: bool,
         links: Vec<Link>,
+        tags: Vec<Tag>,
     ) -> Todo {
         Todo {
             file_path,
@@ -139,13 +150,14 @@ impl Todo {
             text,
             is_completed,
             links,
+            tags,
         }
     }
 }
 
-fn to_lisp(env: &Env, links: Vec<Link>) -> emacs::Result<Value> {
-    let links: Vec<Value> = links.into_iter().flat_map(|l| l.into_lisp(env)).collect();
-    env.vector(&links)
+fn vec_to_lisp<'e, T: IntoLisp<'e>>(env: &'e Env, vec: Vec<T>) -> emacs::Result<Value> {
+    let values: Vec<Value> = vec.into_iter().flat_map(|l| l.into_lisp(env)).collect();
+    env.vector(&values)
 }
 
 impl IntoLisp<'_> for Todo {
@@ -161,6 +173,7 @@ impl IntoLisp<'_> for Todo {
                 "text",
                 "is_completed",
                 "links",
+                "tags",
             ),
         )?;
 
@@ -174,7 +187,8 @@ impl IntoLisp<'_> for Todo {
                 self.date_completed.map(|d| d.timestamp()),
                 self.text,
                 self.is_completed,
-                to_lisp(env, self.links)?,
+                vec_to_lisp(env, self.links)?,
+                vec_to_lisp(env, self.tags)?,
             ),
         )?;
 
@@ -192,10 +206,13 @@ pub struct TodoInfo {
     date_due: Option<DateTime<Utc>>,
     date_completed: Option<DateTime<Utc>>,
     links: Vec<Link>,
+    tags: Vec<Tag>,
 }
 
-#[derive(Debug, Fail, PartialEq)]
+#[derive(Debug, Fail, PartialEq, Serialize)]
 pub enum MxtodoSearcherError {
+    #[fail(display = "error serializing search result to JSON: {}", _0)]
+    JsonSerializationError(String),
     #[fail(display = "Malformed date string: {:?}", _0)]
     MalformedDateString(String),
     #[fail(display = "Malformed regular expression: {:?}", _0)]
@@ -224,16 +241,44 @@ fn datetime_from_ymd_str(ymd_str: &str) -> Result<DateTime<Utc>, MxtodoSearcherE
     let date = NaiveDate::parse_from_str(ymd_str, "%Y-%m-%d")
         .map_err(|_| MxtodoSearcherError::MalformedDateString(ymd_str.to_string()))?;
 
-    let datetime = date.and_hms(0, 0, 0);
+    let datetime = date
+        .and_hms_opt(0, 0, 0)
+        .ok_or(MxtodoSearcherError::MalformedDateString(
+            ymd_str.to_string(),
+        ))?;
 
-    Ok(Utc.from_local_datetime(&datetime).unwrap())
+    match Utc.from_local_datetime(&datetime) {
+        LocalResult::Single(dt) => Ok(dt),
+        LocalResult::Ambiguous(_, _) => Err(MxtodoSearcherError::MalformedDateString(format!(
+            "Ambiguous datetime for {}",
+            ymd_str
+        ))),
+        LocalResult::None => Err(MxtodoSearcherError::MalformedDateString(format!(
+            "No datetime found for {}",
+            ymd_str
+        ))),
+    }
 }
 
-fn utc_datetime_from_date_str_with_optional_time(date_str: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
-    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ")
-        .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map(|dt| dt.and_hms(0, 0, 0)))
-        .map_err(|_| MxtodoSearcherError::MalformedDateString(date_str.to_string()))
-        .map(|datetime| Utc.from_utc_datetime(&datetime))
+fn utc_datetime_from_date_str_with_optional_time(
+    date_str: &str,
+) -> Result<DateTime<Utc>, MxtodoSearcherError> {
+    let mut r: Result<NaiveDateTime, MxtodoSearcherError> =
+        NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ")
+            .map_err(|_| MxtodoSearcherError::MalformedDateString(date_str.to_string()));
+
+    if r.is_err() {
+        r = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map_err(|_| MxtodoSearcherError::MalformedDateString(date_str.to_string()))
+            .map(|dt| {
+                dt.and_hms_opt(0, 0, 0)
+                    .ok_or(MxtodoSearcherError::MalformedDateString(
+                        date_str.to_string(),
+                    ))
+            })?;
+    }
+
+    r.map(|datetime| Utc.from_utc_datetime(&datetime))
 }
 
 fn display_date_from_file_path(file_path: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
@@ -287,6 +332,19 @@ fn extract_links(todo_text: &str) -> Vec<Link> {
     links
 }
 
+fn extract_tags(todo_text: &str) -> Vec<Tag> {
+    lazy_static! {
+        static ref TAG: Regex = Regex::new(r"#(?P<tag>[^\#\s]+)").unwrap();
+    }
+
+    let tags = TAG
+        .captures_iter(todo_text)
+        .flat_map(|capture| capture.name("tag").map(|t| Tag(t.as_str().to_string())))
+        .collect();
+
+    tags
+}
+
 fn extract_info(todo_line: &str) -> Result<TodoInfo, MxtodoSearcherError> {
     lazy_static! {
         static ref TODO: Regex = Regex::new(r"^- \[(?P<completed>[Xx]|\s)\]\s+(?P<text>.*?)(?: *\(due (?P<date_due>[^)]+)\))?(?: *\(completed (?P<date_completed>[^)]+)\))?$").unwrap();
@@ -315,6 +373,7 @@ fn extract_info(todo_line: &str) -> Result<TodoInfo, MxtodoSearcherError> {
                 .transpose()?;
 
             let links = extract_links(&text);
+            let tags = extract_tags(&text);
 
             Ok(TodoInfo {
                 is_completed,
@@ -322,6 +381,7 @@ fn extract_info(todo_line: &str) -> Result<TodoInfo, MxtodoSearcherError> {
                 date_due,
                 date_completed,
                 links,
+                tags,
             })
         })
         .ok_or(MxtodoSearcherError::TodoParsingError(todo_line.to_string()))
@@ -340,6 +400,7 @@ impl Todo {
             date_due,
             date_completed,
             links,
+            tags,
         } = extract_info(&line)?;
 
         Ok(Todo {
@@ -351,6 +412,7 @@ impl Todo {
             text,
             is_completed,
             links,
+            tags,
         })
     }
 }
@@ -471,12 +533,13 @@ mod tests {
     use crate::*;
     use std::fs::File;
     use std::io::Write;
-    use tempfile::tempdir;
+    use std::path::PathBuf;
+    use tempfile;
 
     #[test]
     fn files_to_search_returns_the_expected_files() -> Result<(), String> {
-        let dir =
-            tempdir().map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
+        let dir = tempfile::tempdir()
+            .map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
         let file_path = dir.path().join("my-temporary-file.md");
         let mut file1 = File::create(&file_path)
             .map_err(|e| format!("Unable to create a temp file: {:?}", e))?;
@@ -492,8 +555,8 @@ mod tests {
 
     #[test]
     fn files_to_search_returns_no_files() -> Result<(), String> {
-        let dir =
-            tempdir().map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
+        let dir = tempfile::tempdir()
+            .map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
         let file_path = dir.path().join("my-temporary-file.derp");
         let mut file1 = File::create(&file_path)
             .map_err(|e| format!("Unable to create a temp file: {:?}", e))?;
@@ -507,27 +570,37 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn search_directory_returns_the_expected_matches() -> Result<(), String> {
-        let dir =
-            tempdir().map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
-        let file_path: std::path::PathBuf = dir.path().join("2022-2-11.md");
+    fn create_test_file(filename: &str) -> Result<(tempfile::TempDir, PathBuf), String> {
+        let dir = tempfile::tempdir()
+            .map_err(|e| format!("Unable to create a temporary directory: {:?}", e))?;
+        let file_path: PathBuf = dir.path().join(filename);
         let mut file1 = File::create(&file_path)
             .map_err(|e| format!("Unable to create a temp file: {:?}", e))?;
         writeln!(file1, "- [ ] do your taxes")
             .map_err(|e| format!("Unable to write to temp file: {:?}", e))?;
 
+        Ok((dir, file_path))
+    }
+
+    #[test]
+    fn search_directory_returns_the_expected_matches() -> Result<(), String> {
+        let (dir, file_path) = create_test_file("2022-2-11.md")?;
         let pattern = r"^- ?\[[Xx ]\] ".to_string();
 
         let expected: TodosAndErrors = (
             vec![Todo::new(
-                file_path.into_os_string().to_string_lossy().to_string(),
+                file_path
+                    .clone()
+                    .into_os_string()
+                    .to_string_lossy()
+                    .to_string(),
                 1,
-                Utc.ymd(2022, 2, 11).and_hms(0, 0, 0),
+                Utc.with_ymd_and_hms(2022, 2, 11, 0, 0, 0).unwrap(),
                 None,
                 None,
                 "do your taxes".to_string(),
                 false,
+                vec![],
                 vec![],
             )],
             vec![],
@@ -552,26 +625,28 @@ mod tests {
     fn extract_info_returns_the_correct_due_date_in_utc() -> Result<(), String> {
         let text = "ride a boat".to_string();
         let is_completed = false;
-        let date_due = Some(Utc.ymd(2022, 8, 6).and_hms(0, 0, 0));
+        let date_due = Some(Utc.with_ymd_and_hms(2022, 8, 6, 0, 0, 0).unwrap());
         let date_completed = None;
         let links: Vec<Link> = vec![];
-        let todo_line = format!("- [ ] {text} (due 2022-08-06)", text=text);
+        let tags: Vec<Tag> = vec![];
+        let todo_line = format!("- [ ] {text} (due 2022-08-06)", text = text);
 
         let expected: TodoInfo = TodoInfo {
             is_completed,
             text,
             date_due,
             date_completed,
-            links
+            links,
+            tags,
         };
 
         let actual = extract_info(&todo_line).unwrap();
 
         assert_eq!(expected, actual);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn extract_links_returns_no_links_when_there_are_none() -> Result<(), String> {
         let text = "- [ ] read a book";
@@ -629,31 +704,30 @@ mod tests {
     }
 
     #[test]
-    fn udfdswot_given_well_formed_date_str_returns_a_utc_datetime() -> Result<(), String>  {
-        let expected = Utc.ymd(2022, 9, 25).and_hms(0, 0, 0);
-        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25").unwrap();
-
+    fn extract_tags_returns_no_tags_when_there_are_none() -> Result<(), String> {
+        let text = "- [ ] read a book";
+        let expected: Vec<Tag> = vec![];
+        let actual = extract_tags(text);
         assert_eq!(expected, actual);
 
         Ok(())
     }
 
     #[test]
-    fn udfdswot_given_well_formed_datetime_str_returns_a_utc_datetime() -> Result<(), String>  {
-        let expected = Utc.ymd(2022, 9, 25).and_hms(0, 0, 0);
-        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25T00:00:00Z").unwrap();
-
+    fn extract_tags_returns_the_expected_tag_when_there_is_one() -> Result<(), String> {
+        let text = "- [ ] go for a jog #exercise";
+        let expected = vec![Tag("exercise".to_string())];
+        let actual = extract_tags(text);
         assert_eq!(expected, actual);
 
         Ok(())
     }
 
     #[test]
-    fn udfdswot_given_malformed_date_str_returns_an_error() -> Result<(), String>  {
-        let expected = MxtodoSearcherError::MalformedDateString("foo bar baz today".to_string());
-        let actual = utc_datetime_from_date_str_with_optional_time("foo bar baz today")
-            .unwrap_err();
-
+    fn extract_tags_returns_all_the_expected_tags() -> Result<(), String> {
+        let text = "- [ ] take kids to school #parenting #home";
+        let expected = vec![Tag("parenting".to_string()), Tag("home".to_string())];
+        let actual = extract_tags(text);
         assert_eq!(expected, actual);
 
         Ok(())
@@ -664,19 +738,51 @@ mod tests {
         let text = "add some details for Jira ticket".to_string();
         let is_completed = true;
         let date_due = None;
-        let date_completed = Some(Utc.ymd(2023, 6, 28).and_hms(10, 19, 13));
+        let date_completed = Some(Utc.with_ymd_and_hms(2023, 6, 28, 10, 19, 13).unwrap());
         let links: Vec<Link> = vec![];
-        let todo_line = format!("- [x] {text} (completed 2023-06-28T10:19:13Z)", text=text);
+        let tags: Vec<Tag> = vec![];
+        let todo_line = format!("- [x] {text} (completed 2023-06-28T10:19:13Z)", text = text);
 
         let expected: TodoInfo = TodoInfo {
             is_completed,
             text,
             date_due,
             date_completed,
-            links
+            links,
+            tags,
         };
 
         let actual = extract_info(&todo_line).unwrap();
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_well_formed_date_str_returns_a_utc_datetime() -> Result<(), String> {
+        let expected = Utc.with_ymd_and_hms(2022, 9, 25, 0, 0, 0).unwrap();
+        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25").unwrap();
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_well_formed_datetime_str_returns_a_utc_datetime() -> Result<(), String> {
+        let expected = Utc.with_ymd_and_hms(2022, 9, 25, 0, 0, 0).unwrap();
+        let actual = utc_datetime_from_date_str_with_optional_time("2022-09-25T00:00:00Z").unwrap();
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn udfdswot_given_malformed_date_str_returns_an_error() -> Result<(), String> {
+        let expected = MxtodoSearcherError::MalformedDateString("foo bar baz today".to_string());
+        let actual =
+            utc_datetime_from_date_str_with_optional_time("foo bar baz today").unwrap_err();
 
         assert_eq!(expected, actual);
 

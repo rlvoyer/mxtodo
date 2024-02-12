@@ -1,11 +1,10 @@
-#[macro_use]
 extern crate failure;
 
 use clap::Parser;
 use failure::Error;
 use serde_json;
 
-use mxtodo_searcher::{_search_directory, MxtodoSearcherError};
+use mxtodo_searcher::{MxtodoSearcherError, _search_directory};
 
 const DEFAULT_PATTERN: &str = r"^- ?\[[Xx ]\] ";
 const DEFAULT_EXTENSION: &str = r".md";
@@ -23,14 +22,6 @@ struct Opts {
     file_ext: Option<String>,
 }
 
-#[derive(Debug, Fail)]
-enum MxtodoSearchError {
-    #[fail(display = "error searching directory {}: {}", directory, error)]
-    DirectorySearchError { directory: String, error: MxtodoSearcherError },
-    #[fail(display = "error serializing search result to JSON: {}", error)]
-    JsonSerializationError { error: serde_json::Error },
-}
-
 fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
 
@@ -38,8 +29,7 @@ fn main() -> Result<(), Error> {
     let file_ext = opts.file_ext.unwrap_or(DEFAULT_EXTENSION.to_string());
     let directory = opts.directory;
 
-    let (todos, errors) = _search_directory(&directory, &file_ext, &pattern)
-        .map_err(|error| MxtodoSearchError::DirectorySearchError { directory, error })?;
+    let (todos, errors) = _search_directory(&directory, &file_ext, &pattern)?;
 
     if errors.len() > 0 {
         eprintln!("Encountered {} errors when searching for TODOs", errors.len());
@@ -47,10 +37,14 @@ fn main() -> Result<(), Error> {
             eprintln!("{}", error)
         }
     }
-    
+
     for todo in todos {
-        let todo_json = serde_json::to_string(&todo)
-            .map_err(|error| MxtodoSearchError::JsonSerializationError { error })?;
+        let todo_json = serde_json::to_string(&todo).map_err(|error| {
+            MxtodoSearcherError::JsonSerializationError(format!(
+                "unable to JSON serialize the TODO: {:?}",
+                error.to_string()
+            ))
+        })?;
         println!("{}", todo_json);
     }
 

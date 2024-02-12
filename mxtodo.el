@@ -51,7 +51,7 @@
       (insert-file-contents (or load-file-name byte-compile-current-file))
       (goto-char (point-min))
       (search-forward ";; Version: ")
-      (buffer-substring-no-properties (point) (point-at-eol)))
+      (buffer-substring-no-properties (point) (line-end-position)))
     "The version of this module.")
 
   ;; TODO: URL should be a function of architecture and version, but let's assume architecture to start
@@ -123,7 +123,8 @@
   (date-completed-ts nil :type ts)
   (text nil :type string)
   (is-completed nil :type boolean)
-  (links '() :type list))
+  (links '() :type list)
+  (tags '() :type list))
 
 (defun mxtodo--gather-todos (&optional folder-path file-ext todo-pattern)
   "Gather todo items from files matching specified parameters.
@@ -334,7 +335,8 @@ The resulting timestamp is returned as a ts struct."
          (date-due (if date-due-val (make-ts :unix date-due-val) nil))
          (date-completed-val (cdr (assoc "date_completed" todo-alist)))
          (date-completed (if date-completed-val (make-ts :unix date-completed-val)))
-         (links (cdr (assoc "links" todo-alist))))
+         (links (cdr (assoc "links" todo-alist)))
+         (tags (cdr (assoc "tags" todo-alist))))
     (make-mxtodo-item
      :file-path file-path
      :file-line-number file-line-number
@@ -344,7 +346,8 @@ The resulting timestamp is returned as a ts struct."
      :is-completed is-completed
      :date-due-ts date-due
      :date-completed-ts date-completed
-     :links links)))
+     :links links
+     :tags tags)))
 
 (defun mxtodo--toggle-todo-completed (todo)
   "Toggle TODO's is-completed field."
