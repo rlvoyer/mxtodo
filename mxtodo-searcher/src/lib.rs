@@ -105,11 +105,22 @@ impl TodoMatch {
 }
 
 #[derive(Eq, PartialEq, Debug, Clone, Serialize)]
-pub struct Tag(String);
+pub struct Tag {
+    pub start_offset: usize,
+    pub length: usize,
+    pub text: String,
+}
 
 impl IntoLisp<'_> for Tag {
     fn into_lisp(self, env: &Env) -> emacs::Result<Value<'_>> {
-        self.0.into_lisp(env)
+        let keys = env.call("list", ("start_offset", "length", "text"))?;
+
+        let values = env.call("list", (self.start_offset, self.length, self.text))?;
+
+        env.call(
+            "cl-pairlis",
+            &[keys.into_lisp(env)?, values.into_lisp(env)?],
+        )
     }
 }
 
@@ -157,7 +168,7 @@ impl Todo {
 
 fn vec_to_lisp<'e, T: IntoLisp<'e>>(env: &'e Env, vec: Vec<T>) -> emacs::Result<Value> {
     let values: Vec<Value> = vec.into_iter().flat_map(|l| l.into_lisp(env)).collect();
-    env.vector(&values)
+    env.list(&values)
 }
 
 impl IntoLisp<'_> for Todo {
@@ -334,12 +345,31 @@ fn extract_links(todo_text: &str) -> Vec<Link> {
 
 fn extract_tags(todo_text: &str) -> Vec<Tag> {
     lazy_static! {
-        static ref TAG: Regex = Regex::new(r"#(?P<tag>[^\#\s]+)").unwrap();
+        static ref TAG: Regex = Regex::new(r"(?P<tag>#[^\#\s]+)").unwrap();
     }
 
     let tags = TAG
         .captures_iter(todo_text)
-        .flat_map(|capture| capture.name("tag").map(|t| Tag(t.as_str().to_string())))
+        .flat_map(|capture| {
+            option! {
+                let text_and_start_offset = capture
+                    .name("tag")
+                    .map(|t| (t.as_str().to_string(), t.start()));
+
+                let match_ <- capture.get(0);
+                let start_offset = match_.start();
+                let length = match_.end() - start_offset;
+
+                let (mut text, start_offset) <- text_and_start_offset;
+                text = text[1..].to_string();
+
+                Tag {
+                    start_offset,
+                    length,
+                    text,
+                }
+            }
+        })
         .collect();
 
     tags
@@ -716,7 +746,11 @@ mod tests {
     #[test]
     fn extract_tags_returns_the_expected_tag_when_there_is_one() -> Result<(), String> {
         let text = "- [ ] go for a jog #exercise";
-        let expected = vec![Tag("exercise".to_string())];
+        let expected = vec![Tag {
+            start_offset: 19,
+            length: 9,
+            text: "exercise".to_string(),
+        }];
         let actual = extract_tags(text);
         assert_eq!(expected, actual);
 
@@ -726,7 +760,18 @@ mod tests {
     #[test]
     fn extract_tags_returns_all_the_expected_tags() -> Result<(), String> {
         let text = "- [ ] take kids to school #parenting #home";
-        let expected = vec![Tag("parenting".to_string()), Tag("home".to_string())];
+        let expected = vec![
+            Tag {
+                start_offset: 26,
+                length: 10,
+                text: "parenting".to_string(),
+            },
+            Tag {
+                start_offset: 37,
+                length: 5,
+                text: "home".to_string(),
+            },
+        ];
         let actual = extract_tags(text);
         assert_eq!(expected, actual);
 

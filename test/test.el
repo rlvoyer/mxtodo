@@ -367,3 +367,39 @@
     (should-error
      (mxtodo-searcher-search-directory tmp-file ".md" "^- ?\\[[Xx ]\\]")
      :type 'path-is-not-a-directory)))
+
+(ert-deftest test-serialize-todo-serialize-tags-single-tag ()
+  (let* ((input-todo
+          (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 6
+                                                           :day 24
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "write some unit tests"
+                            :is-completed nil
+                            :tags '("coding")))
+         (expected "coding")
+         (actual (mxtodo--serialize-tags input-todo)))
+    (should (equal expected actual))))
+
+(ert-deftest test-serialize-todo-serialize-tags-multiple-tags ()
+  (let* ((input-todo
+          (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 6
+                                                           :day 24
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "write some unit tests"
+                            :is-completed nil
+                            :tags '("coding" "testing")))
+         (expected "coding testing")
+         (actual (mxtodo--serialize-tags input-todo)))
+    (should (equal expected actual))))

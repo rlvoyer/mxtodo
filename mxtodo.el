@@ -176,17 +176,6 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
   "Face for due dates."
   :group 'mxtodo)
 
-(defun mxtodo--render-due-date (date)
-  "Render a TODO due date as a string."
-  (if (not (equal date nil))
-      (let* ((due-date-str (format " // due %s" (mxtodo--render-date date)))
-             (start-pos 0)
-             (end-pos (length due-date-str)))
-        (progn
-          (add-text-properties start-pos end-pos '(face mxtodo--due-date-face) due-date-str)
-          due-date-str))
-    ""))
-
 (defface mxtodo--completed-date-face
   '((t
      :foreground "#28CD41"
@@ -218,16 +207,32 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
   "Face for completed TODO items."
   :group 'mxtodo)
 
+(defface mxtodo--tag-face
+  '((t
+     :foreground "#93E0E3"
+     :weight bold
+     ))
+  "Face for tags."
+  :group 'mxtodo)
+
+(defun mxtodo--render-due-date (date)
+  "Render a TODO due date as a string."
+  (if (not (equal date nil))
+      (let* ((due-date-str (format " // due %s" (mxtodo--render-date date)))
+             (start-pos 0)
+             (end-pos (length due-date-str)))
+        (progn
+          (add-text-properties start-pos end-pos '(face mxtodo--due-date-face) due-date-str)
+          due-date-str))
+    ""))
+
 (defun mxtodo--visible-text (todo)
   "Construct the visible text portion of TODO text."
-  (if (mxtodo-item-is-completed todo)
-      (format "%s %s%s"
-              (mxtodo--render-is-completed todo)
-              (mxtodo-item-text todo)
-              (mxtodo--render-completed-date (mxtodo-item-date-completed-ts todo)))
-    (format "%s %s%s"
-            (mxtodo--render-is-completed todo)
-            (mxtodo-item-text todo)
+  (format "%s %s%s"
+          (mxtodo--render-is-completed todo)
+          (mxtodo-item-text todo)
+          (if (mxtodo-item-is-completed todo)
+              (mxtodo--render-completed-date (mxtodo-item-date-completed-ts todo))
             (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
 
 (defface mxtodo--link-text-face
@@ -285,6 +290,21 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
    (lambda (link) (mxtodo--highlight-link line-text link))
    links))
 
+(defun mxtodo--highlight-tag (line-text tag)
+  "Make the specified TAG text colorized in LINE-TEXT."
+  (let* ((tag-start (+ mxtodo--checkbox-offset (cdr (assoc "start_offset" tag))))
+         (tag-end (+ tag-start (cdr (assoc "length" tag))))
+         (tp (list 'face 'mxtodo--tag-face
+                   'font-lock-multiline t)))
+    (progn
+      (add-text-properties tag-start tag-end tp line-text))))
+
+(defun mxtodo--highlight-tags (line-text tags)
+  "Colorize each of the TAGS in the specified string LINE-TEXT."
+  (mapcar
+   (lambda (tag) (mxtodo--highlight-tag line-text tag))
+   tags))
+
 (defun mxtodo--render-todo (todo)
   "Render a TODO as a string. This string includes an invisible portion."
   (let* ((visible-text (mxtodo--visible-text todo))
@@ -299,6 +319,7 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
       (if (mxtodo-item-is-completed todo)
           (add-text-properties todo-text-start-pos todo-text-end-pos '(face mxtodo--completed-face) line-text))
       (mxtodo--highlight-markdown-links line-text (mxtodo-item-links todo))
+      (mxtodo--highlight-tags line-text (mxtodo-item-tags todo))
       line-text)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
@@ -399,12 +420,21 @@ The resulting timestamp is returned as a ts struct."
         (format " (completed %s)" (mxtodo--serialize-date date))
       "")))
 
+(defun mxtodo--serialize-tags (todo)
+  "Serialize TODO tags."
+  (let ((tags (mxtodo-item-tags todo)))
+    (cond
+     ((null tags ""))
+     ((null (cdr tags)) (car tags))
+     (t (mapconcat 'identity tags " ")))))
+
 (defun mxtodo--serialize-as-str (todo)
   "Serialize a TODO as a string."
   (let* ((todo-line
-          (format "%s %s%s%s\n"
+          (format "%s %s%s%s%s\n"
                   (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
+                  (mxtodo--serialize-tags todo)
                   (mxtodo--serialize-due-date-str todo)
                   (mxtodo--serialize-completed-date-str todo))))
     todo-line))
