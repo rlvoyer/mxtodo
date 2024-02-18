@@ -420,21 +420,20 @@ The resulting timestamp is returned as a ts struct."
         (format " (completed %s)" (mxtodo--serialize-date date))
       "")))
 
-(defun mxtodo--serialize-tags (todo)
-  "Serialize TODO tags."
-  (let ((tags (mxtodo-item-tags todo)))
-    (cond
-     ((equal nil tags) "")
-     ((equal nil (cdr tags)) (car tags))
-     (t (mapconcat 'identity tags " ")))))
+;; (defun mxtodo--serialize-tags (todo)
+;;   "Serialize TODO tags."
+;;   (let ((tags (mxtodo-item-tags todo)))
+;;     (cond
+;;      ((equal nil tags) "")
+;;      ((equal nil (cdr tags)) (car tags))
+;;      (t (mapconcat #'(lambda (tag) (cdr (assoc "text" tag))) tags " ")))))
 
 (defun mxtodo--serialize-as-str (todo)
   "Serialize a TODO as a string."
   (let* ((todo-line
-          (format "%s %s%s%s%s\n"
+          (format "%s %s%s%s\n"
                   (mxtodo--render-is-completed todo)
                   (mxtodo-item-text todo)
-                  (mxtodo--serialize-tags todo)
                   (mxtodo--serialize-due-date-str todo)
                   (mxtodo--serialize-completed-date-str todo))))
     todo-line))
