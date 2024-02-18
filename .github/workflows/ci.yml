@@ -51,10 +51,11 @@ jobs:
           filesize=$(du -sh ./mxtodo-searcher/target/debug/libmxtodo_searcher.so)
           echo "Artifact size: $filesize"
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: mxtodo-searcher.so
           path: ./mxtodo-searcher/target/debug/libmxtodo_searcher.so
+          if-no-files-found: error
   test:
     needs:
       - build
@@ -64,8 +65,10 @@ jobs:
     strategy:
       matrix:
         emacs_version:
-          - 27.1
-          - 27.2
+          - 28.1
+          - 28.2
+          - 29.1
+          - 29.2
 
         allow_failures: [false]
 
@@ -73,7 +76,7 @@ jobs:
       - name: Check out the source code
         uses: actions/checkout@v2
 
-      - uses: actions/download-artifact@master
+      - uses: actions/download-artifact@v4
         with:
           name: mxtodo-searcher.so
 
