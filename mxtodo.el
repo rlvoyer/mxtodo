@@ -424,8 +424,8 @@ The resulting timestamp is returned as a ts struct."
   "Serialize TODO tags."
   (let ((tags (mxtodo-item-tags todo)))
     (cond
-     ((null tags ""))
-     ((null (cdr tags)) (car tags))
+     ((equal nil tags) "")
+     ((equal nil (cdr tags)) (car tags))
      (t (mapconcat 'identity tags " ")))))
 
 (defun mxtodo--serialize-as-str (todo)
