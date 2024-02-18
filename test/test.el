@@ -317,13 +317,11 @@
   (let* ((notes-dir (make-test-notes-dir))
          (notes-file (make-test-notes-file notes-dir 1))
          (todos (read-test-notes-file notes-file))
-         (_ (set-file-times notes-file))
          (todo (car todos))
-         (expected nil)
-         (actual (mxtodo--todo-is-fresh-p todo)))
+         (expected nil))
     (progn
       (set-file-times notes-file)
-      (should (equal expected actual)))))
+      (should (equal expected (mxtodo--todo-is-fresh-p todo))))))
 
 (ert-deftest test-creating-a-daily-notefile ()
   (let* ((notes-dir (make-test-notes-dir))
