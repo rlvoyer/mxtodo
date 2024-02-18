@@ -320,6 +320,7 @@
          (todo (car todos))
          (expected nil))
     (progn
+      (sit-for 1)
       (set-file-times notes-file)
       (should (equal expected (mxtodo--todo-is-fresh-p todo))))))
 
