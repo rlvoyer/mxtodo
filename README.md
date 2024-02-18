@@ -2,6 +2,8 @@
 
 An Emacs package for managing TODOs spread across Markdown notes.
 
+[![Build](https://github.com/rlvoyer/mxtodo/actions/workflows/ci.yml/badge.svg)](https://github.com/rlvoyer/mxtodo/actions/workflows/ci.yml)
+
 ## Dependencies
 
 To develop on mxtodo, you'll want to have [eldev](https://github.com/doublep/eldev) installed locally.
