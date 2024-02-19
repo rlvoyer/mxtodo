@@ -68,6 +68,7 @@ build_searcher_artifacts() {
     cargo build --verbose --release --target=aarch64-apple-darwin
     cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so
     cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib
+    cp target/aarch64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.aarch64-apple-darwin.dylib
     popd > /dev/null && popd > /dev/null
 }
 
