@@ -34,29 +34,29 @@
 (unless (functionp 'module-load)
   (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
 
-(defun mxtodo--trim-system-info (&optional sys-config)
-  "Trim unnecessary additional version info off the end of a system-configuration string."
-  (progn
-    (unless sys-config (setq sys-config system-configuration))
-    (let* ((parts (vconcat (split-string sys-config "-")))
-           (last-idx (- (length parts) 1))
-           (architecture (aref parts 0))
-           (distro-or-os (aref parts last-idx))
-           (pc-or-apple (aref parts 1)))
-      (cond
-       ((string-prefix-p "darwin" distro-or-os t) (concat (aref parts 0) "-" (aref parts 1) "-" "darwin"))
-       ((and (equal pc-or-apple "pc") (equal (aref parts 2) "linux")) (concat architecture "-" "unknown" "-" "linux" "-" distro-or-os))
-       (t sys-config)))))
-
-(defun mxtodo--lib-extension (&optional sys-config)
-  "Determine the appropriate library artifact extension given a system-configuration string."
-  (progn
-    (unless sys-config (setq sys-config system-configuration))
-    (if (string-match-p (regexp-quote "darwin") sys-config)
-        "dylib"
-      "so")))
-
 (eval-and-compile
+  (defun mxtodo--trim-system-info (&optional sys-config)
+    "Trim unnecessary info off the end of a system-configuration string."
+    (progn
+      (unless sys-config (setq sys-config system-configuration))
+      (let* ((parts (vconcat (split-string sys-config "-")))
+             (last-idx (- (length parts) 1))
+             (architecture (aref parts 0))
+             (distro-or-os (aref parts last-idx))
+             (pc-or-apple (aref parts 1)))
+	(cond
+	 ((string-prefix-p "darwin" distro-or-os t) (concat (aref parts 0) "-" (aref parts 1) "-" "darwin"))
+	 ((and (equal pc-or-apple "pc") (equal (aref parts 2) "linux")) (concat architecture "-" "unknown" "-" "linux" "-" distro-or-os))
+	 (t sys-config)))))
+
+  (defun mxtodo--lib-extension (&optional sys-config)
+    "Determine the library extension given a system-configuration string."
+    (progn
+      (unless sys-config (setq sys-config system-configuration))
+      (if (string-match-p (regexp-quote "darwin") sys-config)
+          "dylib"
+	"so")))
+
   (defvar mxtodo--module-install-dir
     (concat (expand-file-name user-emacs-directory) "mxtodo")
     "The directory where the native searcher module is to be installed.")
@@ -70,10 +70,13 @@
 
   (defvar mxtodo--version
     (with-temp-buffer
-      (insert-file-contents load-file-name)
+      (insert-file-contents (or load-file-name byte-compile-current-file))
       (goto-char (point-min))
-      (search-forward ";; Version: ")
-      (buffer-substring-no-properties (point) (line-end-position)))
+      (if (search-forward ";; Version: " nil t)
+          (buffer-substring-no-properties (point) (line-end-position))
+        (progn
+          (message "unable to find mxtodo version: %s" (buffer-string))
+          (throw 'mxtodo-error-downloading-searcher "unable to determine version to download"))))
     "The version of this module.")
 
   ;; TODO: in the case where the dynamic module already exists, we are not checking version and should
