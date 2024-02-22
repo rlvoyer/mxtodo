@@ -34,6 +34,28 @@
 (unless (functionp 'module-load)
   (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
 
+(defun mxtodo--trim-system-info (&optional sys-config)
+  "Trim unnecessary additional version info off the end of a system-configuration string."
+  (progn
+    (unless sys-config (setq sys-config system-configuration))
+    (let* ((parts (vconcat (split-string sys-config "-")))
+           (last-idx (- (length parts) 1))
+           (architecture (aref parts 0))
+           (distro-or-os (aref parts last-idx))
+           (pc-or-apple (aref parts 1)))
+      (cond
+       ((string-prefix-p "darwin" distro-or-os t) (concat (aref parts 0) "-" (aref parts 1) "-" "darwin"))
+       ((and (equal pc-or-apple "pc") (equal (aref parts 2) "linux")) (concat architecture "-" "unknown" "-" "linux" "-" distro-or-os))
+       (t sys-config)))))
+
+(defun mxtodo--lib-extension (&optional sys-config)
+  "Determine the appropriate library artifact extension given a system-configuration string."
+  (progn
+    (unless sys-config (setq sys-config system-configuration))
+    (if (string-match-p (regexp-quote "darwin") sys-config)
+        "dylib"
+      "so")))
+
 (eval-and-compile
   (defvar mxtodo--module-install-dir
     (concat (expand-file-name user-emacs-directory) "mxtodo")
@@ -48,16 +70,14 @@
 
   (defvar mxtodo--version
     (with-temp-buffer
-      (insert-file-contents (or load-file-name byte-compile-current-file))
+      (insert-file-contents load-file-name)
       (goto-char (point-min))
       (search-forward ";; Version: ")
       (buffer-substring-no-properties (point) (line-end-position)))
     "The version of this module.")
 
-  ;; TODO: URL should be a function of architecture and version, but let's assume architecture to start
   ;; TODO: in the case where the dynamic module already exists, we are not checking version and should
-  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so"))
-         (mxtodo-searcher-module-url))
+  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
     (progn
       (unless (file-exists-p mxtodo-searcher-module-install-file)
         (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
@@ -65,11 +85,13 @@
               (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
               (message (concat "Copying local module to " mxtodo-searcher-module-install-file))
               (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-install-file t))
-          (progn
-            (setq mxtodo-searcher-module-url
-                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.x86_64-apple-darwin.dylib" mxtodo--version))
-            (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
-            (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file))))
+          (let* ((arch-id (mxtodo--trim-system-info))
+                 (lib-ext (mxtodo--lib-extension))
+                 (mxtodo-searcher-module-url
+                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext)))
+            (progn
+              (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
+              (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file)))))
       (add-to-list 'load-path mxtodo--module-install-dir))))
 
 (require 'mxtodo-searcher)
@@ -419,14 +441,6 @@ The resulting timestamp is returned as a ts struct."
     (if (not (equal date nil))
         (format " (completed %s)" (mxtodo--serialize-date date))
       "")))
-
-;; (defun mxtodo--serialize-tags (todo)
-;;   "Serialize TODO tags."
-;;   (let ((tags (mxtodo-item-tags todo)))
-;;     (cond
-;;      ((equal nil tags) "")
-;;      ((equal nil (cdr tags)) (car tags))
-;;      (t (mapconcat #'(lambda (tag) (cdr (assoc "text" tag))) tags " ")))))
 
 (defun mxtodo--serialize-as-str (todo)
   "Serialize a TODO as a string."

@@ -366,3 +366,15 @@
     (should-error
      (mxtodo-searcher-search-directory tmp-file ".md" "^- ?\\[[Xx ]\\]")
      :type 'path-is-not-a-directory)))
+
+(ert-deftest test-trim-system-info-linux ()
+  (should (equal (mxtodo--trim-system-info "x86_64-pc-linux-gnu") "x86_64-unknown-linux-gnu")))
+
+(ert-deftest test-trim-system-info-x86-mac ()
+  (should (equal (mxtodo--trim-system-info "x86_64-apple-darwin18.7.0") "x86_64-apple-darwin")))
+
+(ert-deftest test-lib-extension-linux ()
+  (should (equal (mxtodo--lib-extension "x86_64-pc-linux-gnu") "so")))
+
+(ert-deftest test-lib-extension-mac ()
+  (should (equal (mxtodo--lib-extension "aarch64-apple-darwin21.6.0") "dylib")))
