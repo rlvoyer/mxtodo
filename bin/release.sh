@@ -45,6 +45,10 @@ update_package_version() {
     sed -i '' -e "s/^version = \".*\"$/version = \"$release_version\"/" $HERE/../mxtodo-searcher/Cargo.toml
 }
 
+rollback_version_update() {
+    git checkout HEAD -- $HERE/../mxtodo.el $HERE/../mxtodo-searcher/Cargo.toml
+}
+
 capture_unreleased_changes_from_changelog() {
     local release_version=$1
     local release_date=$(date "+%Y-%m-%d")
@@ -59,17 +63,19 @@ capture_unreleased_changes_from_changelog() {
 }
 
 build_searcher_artifacts() {
-    pushd $HERE/.. > /dev/null
-    rm -rf release-artifacts
-    mkdir release-artifacts
-    pushd mxtodo-searcher > /dev/null
-    cargo build --verbose --release --target=x86_64-unknown-linux-gnu
-    cargo build --verbose --release --target=x86_64-apple-darwin
-    cargo build --verbose --release --target=aarch64-apple-darwin
-    cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so
-    cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib
-    cp target/aarch64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.aarch64-apple-darwin.dylib
-    popd > /dev/null && popd > /dev/null
+    pushd $HERE/.. > /dev/null || return 1
+    rm -rf release-artifacts || return 1
+    mkdir release-artifacts || return 1
+    pushd mxtodo-searcher > /dev/null || return 1
+    cargo build --verbose --release --target=x86_64-unknown-linux-gnu || return 1
+    cargo build --verbose --release --target=x86_64-apple-darwin || return 1
+    cargo build --verbose --release --target=aarch64-apple-darwin || return 1
+    cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so || return 1
+    cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib || return 1
+    cp target/aarch64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.aarch64-apple-darwin.dylib || return 1
+    popd > /dev/null && popd > /dev/null || return 1
+
+    return 0
 }
 
 POSITIONAL=()
@@ -114,10 +120,22 @@ while true; do
     esac
 done
 
+update_package_version $RELEASE_VERSION
+
+set +e
+
 build_searcher_artifacts
 
-update_package_version $RELEASE_VERSION
+if [[ $? -ne 0 ]]; then
+    echo "An error occurred while building the search artifacts...\n"
+    rollback_version_update
+    exit 1
+fi
+
+set -e
+
 capture_unreleased_changes_from_changelog $RELEASE_VERSION > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp $HERE/../CHANGELOG.md
+
 git add $HERE/../mxtodo.el $HERE/../CHANGELOG.md $HERE/../mxtodo-searcher/Cargo.toml && \
     git commit -m "Updated version and CHANGELOG for release $RELEASE_VERSION."
 git push

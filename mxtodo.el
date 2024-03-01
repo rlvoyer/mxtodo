@@ -79,8 +79,7 @@
           (throw 'mxtodo-error-downloading-searcher "unable to determine version to download"))))
     "The version of this module.")
 
-  ;; TODO: in the case where the dynamic module already exists, we are not checking version and should
-  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
+  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) (format "mxtodo-searcher.so.%s" mxtodo--version))))
     (progn
       (unless (file-exists-p mxtodo-searcher-module-install-file)
         (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
@@ -91,10 +90,14 @@
           (let* ((arch-id (mxtodo--trim-system-info))
                  (lib-ext (mxtodo--lib-extension))
                  (mxtodo-searcher-module-url
-                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext)))
+                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext))
+                 (mxtodo-searcher-module-symlink (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
             (progn
               (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
-              (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file)))))
+              (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file)
+              (if (file-exists-p mxtodo-searcher-module-symlink)
+                  (delete-file mxtodo-searcher-module-symlink))
+              (make-symbolic-link mxtodo-searcher-module-install-file mxtodo-searcher-module-symlink)))))
       (add-to-list 'load-path mxtodo--module-install-dir))))
 
 (require 'mxtodo-searcher)
