@@ -68,6 +68,14 @@
         (make-directory mxtodo--module-install-dir))
       mxtodo--module-install-dir))
 
+  (defun mxtodo--make-module-symlink (module-filename symlink-filename)
+    "Make a directory where mxtodo will put the searcher native module."
+    (progn
+      (message (format "Symlinking searcher module file %s to %s" module-filename symlink-filename))
+      (if (file-exists-p symlink-filename)
+          (delete-file symlink-filename))
+      (make-symbolic-link module-filename symlink-filename)))
+
   (defvar mxtodo--version
     (with-temp-buffer
       (insert-file-contents (or load-file-name byte-compile-current-file))
@@ -79,25 +87,24 @@
           (throw 'mxtodo-error-downloading-searcher "unable to determine version to download"))))
     "The version of this module.")
 
-  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) (format "mxtodo-searcher.so.%s" mxtodo--version))))
+  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) (format "mxtodo-searcher.so.%s" mxtodo--version)))
+         (mxtodo-searcher-module-symlink (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
     (progn
       (unless (file-exists-p mxtodo-searcher-module-install-file)
         (if (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")
             (progn
               (message (concat "Using local mxtodo-searcher module: " (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH")))
               (message (concat "Copying local module to " mxtodo-searcher-module-install-file))
-              (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-install-file t))
+              (copy-file (getenv "MXTODO_SEARCHER_LOCAL_MODULE_PATH") mxtodo-searcher-module-install-file t)
+              (mxtodo--make-module-symlink mxtodo-searcher-module-install-file mxtodo-searcher-module-symlink))
           (let* ((arch-id (mxtodo--trim-system-info))
                  (lib-ext (mxtodo--lib-extension))
                  (mxtodo-searcher-module-url
-                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext))
-                 (mxtodo-searcher-module-symlink (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
+                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext)))
             (progn
               (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
               (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file)
-              (if (file-exists-p mxtodo-searcher-module-symlink)
-                  (delete-file mxtodo-searcher-module-symlink))
-              (make-symbolic-link mxtodo-searcher-module-install-file mxtodo-searcher-module-symlink)))))
+              (mxtodo--make-module-symlink mxtodo-searcher-module-install-file mxtodo-searcher-module-symlink)))))
       (add-to-list 'load-path mxtodo--module-install-dir))))
 
 (require 'mxtodo-searcher)
