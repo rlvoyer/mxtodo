@@ -76,18 +76,8 @@
           (delete-file symlink-filename))
       (make-symbolic-link module-filename symlink-filename)))
 
-  (defconst mxtodo--version
-    (with-temp-buffer
-      (insert-file-contents (or load-file-name byte-compile-current-file))
-      (goto-char (point-min))
-      (if (search-forward ";; Version: " nil t)
-          (buffer-substring-no-properties (point) (line-end-position))
-        (progn
-          (message "unable to find mxtodo version: %s" (buffer-string))
-          (throw 'mxtodo-error-downloading-searcher "unable to determine version to download"))))
-    "The version of this module.")
-
-  (let* ((mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) (format "mxtodo-searcher.so.%s" mxtodo--version)))
+  (let* ((mxtodo-version (package-get-version))
+         (mxtodo-searcher-module-install-file (concat (file-name-as-directory (mxtodo--make-module-install-dir)) (format "mxtodo-searcher.so.%s" mxtodo-version)))
          (mxtodo-searcher-module-symlink (concat (file-name-as-directory (mxtodo--make-module-install-dir)) "mxtodo-searcher.so")))
     (progn
       (unless (file-exists-p mxtodo-searcher-module-install-file)
@@ -100,7 +90,7 @@
           (let* ((arch-id (mxtodo--trim-system-info))
                  (lib-ext (mxtodo--lib-extension))
                  (mxtodo-searcher-module-url
-                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo--version arch-id lib-ext)))
+                  (format "https://github.com/rlvoyer/mxtodo/releases/download/v%s/libmxtodo_searcher.%s.%s" mxtodo-version arch-id lib-ext)))
             (progn
               (message (concat "Using release mxtodo-searcher module: " mxtodo-searcher-module-url))
               (url-copy-file mxtodo-searcher-module-url mxtodo-searcher-module-install-file)
