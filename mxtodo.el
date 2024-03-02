@@ -71,12 +71,12 @@
   (defun mxtodo--make-module-symlink (module-filename symlink-filename)
     "Make a directory where mxtodo will put the searcher native module."
     (progn
-      (message (format "Symlinking searcher module file %s to %s" module-filename symlink-filename))
+      (message "Symlinking searcher module file %s to %s" module-filename symlink-filename)
       (if (file-exists-p symlink-filename)
           (delete-file symlink-filename))
       (make-symbolic-link module-filename symlink-filename)))
 
-  (defvar mxtodo--version
+  (defconst mxtodo--version
     (with-temp-buffer
       (insert-file-contents (or load-file-name byte-compile-current-file))
       (goto-char (point-min))
