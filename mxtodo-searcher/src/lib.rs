@@ -1,6 +1,3 @@
-#![feature(path_file_prefix)]
-#![feature(result_flattening)]
-
 #[macro_use]
 extern crate comp;
 
@@ -293,14 +290,14 @@ fn utc_datetime_from_date_str_with_optional_time(
 }
 
 fn display_date_from_file_path(file_path: &str) -> Result<DateTime<Utc>, MxtodoSearcherError> {
-    let file_prefix = Path::new(file_path)
-        .file_prefix()
+    let file_stem = Path::new(file_path)
+        .file_stem()
         .and_then(|s| s.to_str())
         .ok_or(MxtodoSearcherError::UnexpectedIOError(
             file_path.to_string(),
         ))?;
 
-    datetime_from_ymd_str(file_prefix)
+    datetime_from_ymd_str(file_stem)
 }
 
 fn extract_links(todo_text: &str) -> Vec<Link> {
