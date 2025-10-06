@@ -450,7 +450,8 @@ The resulting timestamp is returned as a ts struct."
 
 (defun mxtodo--make-todo-with-reconciliation (todo-alist)
   "Create a TODO item from searcher alist, reconciling with database.
-This handles the full flow: extract from alist, sync with DB, construct final struct."
+This handles the full flow: extract from alist, sync with DB,
+construct final struct."
   (let* ((file-path (cdr (assoc "file_path" todo-alist)))
          (line-number (cdr (assoc "line_number" todo-alist)))
          (file-display-date-ts (make-ts :unix (cdr (assoc "display_date" todo-alist))))
