@@ -67,7 +67,7 @@ build_searcher_artifacts() {
     rm -rf release-artifacts || return 1
     mkdir release-artifacts || return 1
     pushd mxtodo-searcher > /dev/null || return 1
-    cargo build --verbose --release --target=x86_64-unknown-linux-gnu || return 1
+    cross build --verbose --release --target=x86_64-unknown-linux-gnu || return 1
     cargo build --verbose --release --target=x86_64-apple-darwin || return 1
     cargo build --verbose --release --target=aarch64-apple-darwin || return 1
     cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so || return 1
