@@ -3,8 +3,8 @@
 ;; Copyright (C) 2021 Robert Voyer.
 
 ;; Author: Robert Voyer <robert.voyer@gmail.com>
-;; Version: 0.4.0
-;; Package-Requires: ((emacs "27.1") (dash "2.19.0") (f "0.20.0") (ts "1.2.2"))
+;; Version: 0.5.0
+;; Package-Requires: ((emacs "29.1") (dash "2.19.0") (f "0.20.0") (ts "1.2.2"))
 ;; Keywords: calendar, convenience
 ;; URL: https://github.com/rlvoyer/mxtodo
 
@@ -30,6 +30,7 @@
 (require 'f)
 (require 'ts)
 (require 'xref)
+(require 'sqlite)
 
 (unless (functionp 'module-load)
   (error "Dynamic module feature not available, please compile Emacs --with-modules option turned on"))
@@ -60,6 +61,10 @@
   (defvar mxtodo--module-install-dir
     (concat (expand-file-name user-emacs-directory) "mxtodo")
     "The directory where the native searcher module is to be installed.")
+
+  (defvar mxtodo--db-path
+    (concat (file-name-as-directory mxtodo--module-install-dir) "mxtodo.db")
+    "The path to the SQLite database file for storing TODO metadata.")
 
   (defun mxtodo--make-module-install-dir ()
     "Make a directory where mxtodo will put the searcher native module."
@@ -98,6 +103,86 @@
       (add-to-list 'load-path mxtodo--module-install-dir))))
 
 (require 'mxtodo-searcher)
+
+;;; Database functions
+
+(defvar mxtodo--db nil
+  "The SQLite database connection for TODO metadata.")
+
+(defun mxtodo-db--init ()
+  "Initialize the SQLite database with schema if needed."
+  (unless mxtodo--db
+    (setq mxtodo--db (sqlite-open mxtodo--db-path))
+    (sqlite-execute
+     mxtodo--db
+     "CREATE TABLE IF NOT EXISTS todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        line_number INTEGER NOT NULL,
+        text_hash TEXT NOT NULL,
+        date_due INTEGER,
+        date_completed INTEGER,
+        date_created INTEGER NOT NULL,
+        date_modified INTEGER NOT NULL,
+        tags TEXT DEFAULT '[]',
+        UNIQUE(file_path, line_number)
+      )")
+    (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_file_path ON todos(file_path)")
+    (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_date_due ON todos(date_due)")
+    (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_text_hash ON todos(file_path, text_hash)"))
+  mxtodo--db)
+
+(defun mxtodo-db--get-todo (file-path line-number)
+  "Get TODO metadata from database by FILE-PATH and LINE-NUMBER."
+  (let ((db (mxtodo-db--init)))
+    (car (sqlite-select db "SELECT * FROM todos WHERE file_path = ? AND line_number = ?"
+                        (list file-path line-number)))))
+
+(defun mxtodo-db--get-todos-for-file (file-path)
+  "Get all TODO metadata from database for FILE-PATH."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-select db "SELECT * FROM todos WHERE file_path = ?" (list file-path))))
+
+(defun mxtodo-db--find-by-hash (file-path text-hash)
+  "Find TODO in database by FILE-PATH and TEXT-HASH (for detecting moved TODOs)."
+  (let ((db (mxtodo-db--init)))
+    (car (sqlite-select db "SELECT * FROM todos WHERE file_path = ? AND text_hash = ?"
+                        (list file-path text-hash)))))
+
+(defun mxtodo-db--insert (file-path line-number text-hash date-due date-completed tags)
+  "Insert a new TODO into the database."
+  (let ((db (mxtodo-db--init))
+        (now (truncate (ts-unix (ts-now)))))
+    (sqlite-execute
+     db
+     "INSERT INTO todos (file_path, line_number, text_hash, date_due, date_completed, date_created, date_modified, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+     (list file-path line-number text-hash date-due date-completed now now (json-encode tags)))))
+
+(defun mxtodo-db--update (file-path line-number text-hash date-due date-completed tags)
+  "Update an existing TODO in the database."
+  (let ((db (mxtodo-db--init))
+        (now (truncate (ts-unix (ts-now)))))
+    (sqlite-execute
+     db
+     "UPDATE todos SET text_hash = ?, date_due = ?, date_completed = ?, date_modified = ?, tags = ?
+      WHERE file_path = ? AND line_number = ?"
+     (list text-hash date-due date-completed now (json-encode tags) file-path line-number))))
+
+(defun mxtodo-db--delete (file-path line-number)
+  "Delete a TODO from the database."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-execute db "DELETE FROM todos WHERE file_path = ? AND line_number = ?"
+                    (list file-path line-number))))
+
+(defun mxtodo-db--delete-todos-for-file (file-path)
+  "Delete all TODOs for a specific file from the database."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-execute db "DELETE FROM todos WHERE file_path = ?" (list file-path))))
+
+(defun mxtodo--compute-text-hash (text)
+  "Compute SHA256 hash of TODO TEXT for change detection."
+  (secure-hash 'sha256 text))
 
 (defgroup mxtodo nil
   "mxtodo Markdown TODO manager."
@@ -144,10 +229,13 @@
   (file-line-number nil :readonly t :type integer)
   (file-display-date-ts nil :readonly t :type ts)
   (file-last-update-ts nil :readonly t :type ts)
+  (text nil :type string)
+  (text-hash nil :type string)
+  (is-completed nil :type boolean)
   (date-due-ts nil :type ts)
   (date-completed-ts nil :type ts)
-  (text nil :type string)
-  (is-completed nil :type boolean)
+  (date-created-ts nil :type ts)
+  (date-modified-ts nil :type ts)
   (links '() :type list)
   (tags '() :type list))
 
@@ -253,12 +341,19 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
 
 (defun mxtodo--visible-text (todo)
   "Construct the visible text portion of TODO text."
-  (format "%s %s%s"
-          (mxtodo--render-is-completed todo)
-          (mxtodo-item-text todo)
-          (if (mxtodo-item-is-completed todo)
-              (mxtodo--render-completed-date (mxtodo-item-date-completed-ts todo))
-            (mxtodo--render-due-date (mxtodo-item-date-due-ts todo)))))
+  (let ((tags-str (if (mxtodo-item-tags todo)
+                      (let ((formatted-tags (mapconcat (lambda (tag) (concat "#" tag))
+                                                       (mxtodo-item-tags todo)
+                                                       " ")))
+                        (concat " " (propertize formatted-tags 'face 'mxtodo--tag-face)))
+                    "")))
+    (format "%s %s%s%s"
+            (mxtodo--render-is-completed todo)
+            (mxtodo-item-text todo)
+            tags-str
+            (if (mxtodo-item-is-completed todo)
+                (mxtodo--render-completed-date (mxtodo-item-date-completed-ts todo))
+              (mxtodo--render-due-date (mxtodo-item-date-due-ts todo))))))
 
 (defface mxtodo--link-text-face
   '((t
@@ -315,21 +410,6 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
    (lambda (link) (mxtodo--highlight-link line-text link))
    links))
 
-(defun mxtodo--highlight-tag (line-text tag)
-  "Make the specified TAG text colorized in LINE-TEXT."
-  (let* ((tag-start (+ mxtodo--checkbox-offset (cdr (assoc "start_offset" tag))))
-         (tag-end (+ tag-start (cdr (assoc "length" tag))))
-         (tp (list 'face 'mxtodo--tag-face
-                   'font-lock-multiline t)))
-    (progn
-      (add-text-properties tag-start tag-end tp line-text))))
-
-(defun mxtodo--highlight-tags (line-text tags)
-  "Colorize each of the TAGS in the specified string LINE-TEXT."
-  (mapcar
-   (lambda (tag) (mxtodo--highlight-tag line-text tag))
-   tags))
-
 (defun mxtodo--render-todo (todo)
   "Render a TODO as a string. This string includes an invisible portion."
   (let* ((visible-text (mxtodo--visible-text todo))
@@ -344,7 +424,6 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
       (if (mxtodo-item-is-completed todo)
           (add-text-properties todo-text-start-pos todo-text-end-pos '(face mxtodo--completed-face) line-text))
       (mxtodo--highlight-markdown-links line-text (mxtodo-item-links todo))
-      (mxtodo--highlight-tags line-text (mxtodo-item-tags todo))
       line-text)))
 
 (defun mxtodo--extract-info-from-text (todo-line)
@@ -369,41 +448,101 @@ This function extracts the last-modified timestamp from file attributes.
 The resulting timestamp is returned as a ts struct."
   (make-ts :unix (float-time (file-attribute-modification-time (file-attributes file-path)))))
 
-(defun mxtodo--make-todo-from-searcher-alist (todo-alist)
-  "Construct a todo-item from mxtodo-searcher alist."
+(defun mxtodo--make-todo-with-reconciliation (todo-alist)
+  "Create a TODO item from searcher alist, reconciling with database.
+This handles the full flow: extract from alist, sync with DB, construct final struct."
   (let* ((file-path (cdr (assoc "file_path" todo-alist)))
-         (file-line-number (cdr (assoc "line_number" todo-alist)))
+         (line-number (cdr (assoc "line_number" todo-alist)))
          (file-display-date-ts (make-ts :unix (cdr (assoc "display_date" todo-alist))))
          (file-last-update-ts (mxtodo--file-last-modified file-path))
          (todo-text (cdr (assoc "text" todo-alist)))
+         (text-hash (mxtodo--compute-text-hash todo-text))
          (is-completed (cdr (assoc "is_completed" todo-alist)))
-         (date-due-val (cdr (assoc "date_due" todo-alist)))
-         (date-due (if date-due-val (make-ts :unix date-due-val) nil))
-         (date-completed-val (cdr (assoc "date_completed" todo-alist)))
-         (date-completed (if date-completed-val (make-ts :unix date-completed-val)))
          (links (cdr (assoc "links" todo-alist)))
-         (tags (cdr (assoc "tags" todo-alist))))
-    (make-mxtodo-item
-     :file-path file-path
-     :file-line-number file-line-number
-     :file-display-date-ts file-display-date-ts
-     :file-last-update-ts file-last-update-ts
-     :text todo-text
-     :is-completed is-completed
-     :date-due-ts date-due
-     :date-completed-ts date-completed
-     :links links
-     :tags tags)))
+         (tags-raw (or (cdr (assoc "tags" todo-alist)) '()))
+         (tags (cond
+                ((and (vectorp tags-raw) (> (length tags-raw) 0) (hash-table-p (aref tags-raw 0)))
+                 (mapcar (lambda (tag) (gethash "text" tag)) (append tags-raw nil)))
+                ((and (listp tags-raw) (> (length tags-raw) 0) (listp (car tags-raw)))
+                 (mapcar (lambda (tag) (cdr (assoc "text" tag))) tags-raw))
+                (t tags-raw)))
+         (file-date-due (cdr (assoc "date_due" todo-alist)))
+         (file-date-completed (cdr (assoc "date_completed" todo-alist)))
+         (db-record (mxtodo-db--get-todo file-path line-number)))
+
+    (if (null db-record)
+        ;; Case 1: New TODO - insert into DB, migrating dates from file if present
+        (let ((now (truncate (ts-unix (ts-now)))))
+          (mxtodo-db--insert file-path line-number text-hash file-date-due file-date-completed tags)
+          (make-mxtodo-item
+           :file-path file-path
+           :file-line-number line-number
+           :file-display-date-ts file-display-date-ts
+           :file-last-update-ts file-last-update-ts
+           :text todo-text
+           :text-hash text-hash
+           :is-completed is-completed
+           :date-due-ts (if file-date-due (make-ts :unix file-date-due) nil)
+           :date-completed-ts (if file-date-completed (make-ts :unix file-date-completed) nil)
+           :date-created-ts (make-ts :unix now)
+           :date-modified-ts (make-ts :unix now)
+           :links links
+           :tags tags))
+
+      ;; Case 2: Existing TODO - use DB metadata, update if text changed
+      (let ((db-text-hash (nth 3 db-record))
+            (db-date-due (nth 4 db-record))
+            (db-date-completed (nth 5 db-record))
+            (db-date-created (nth 6 db-record))
+            (db-date-modified (nth 7 db-record))
+            (db-tags (let ((parsed (json-parse-string (nth 8 db-record) :array-type 'list)))
+                       (if (eq parsed :null) '() parsed))))
+
+        (unless (string= text-hash db-text-hash)
+          ;; Text changed, update DB
+          (mxtodo-db--update file-path line-number text-hash db-date-due db-date-completed db-tags))
+
+        (make-mxtodo-item
+         :file-path file-path
+         :file-line-number line-number
+         :file-display-date-ts file-display-date-ts
+         :file-last-update-ts file-last-update-ts
+         :text todo-text
+         :text-hash text-hash
+         :is-completed is-completed
+         :date-due-ts (if db-date-due (make-ts :unix db-date-due) nil)
+         :date-completed-ts (if db-date-completed (make-ts :unix db-date-completed) nil)
+         :date-created-ts (if db-date-created (make-ts :unix db-date-created) nil)
+         :date-modified-ts (if db-date-modified (make-ts :unix db-date-modified) nil)
+         :links links
+         :tags db-tags)))))
+
+(defun mxtodo-db--cleanup-orphaned-todos (file-path disk-todos)
+  "Remove TODOs from database that no longer exist in FILE-PATH.
+DISK-TODOS is a list of alists representing current TODOs from disk."
+  (let* ((db-todos (mxtodo-db--get-todos-for-file file-path))
+         (disk-line-numbers (-map (lambda (todo) (cdr (assoc "line_number" todo))) disk-todos)))
+    (dolist (db-record db-todos)
+      (let ((db-line-number (nth 2 db-record)))
+        (unless (member db-line-number disk-line-numbers)
+          (mxtodo-db--delete file-path db-line-number))))))
 
 (defun mxtodo--toggle-todo-completed (todo)
-  "Toggle TODO's is-completed field."
-  (progn
-    (setf
-     (mxtodo-item-is-completed todo)
-     (not (mxtodo-item-is-completed todo)))
-    (if (mxtodo-item-is-completed todo)
-        (setf (mxtodo-item-date-completed-ts todo) (ts-now))
-      (setf (mxtodo-item-date-completed-ts todo) nil))
+  "Toggle TODO's is-completed field and update database."
+  (let* ((new-completed (not (mxtodo-item-is-completed todo)))
+         (new-completed-ts (if new-completed (ts-now) nil))
+         (new-completed-unix (if new-completed-ts (truncate (ts-unix new-completed-ts)) nil))
+         (file-path (mxtodo-item-file-path todo))
+         (line-number (mxtodo-item-file-line-number todo))
+         (text-hash (mxtodo-item-text-hash todo))
+         (date-due (mxtodo-item-date-due-ts todo))
+         (date-due-unix (if date-due (truncate (ts-unix date-due)) nil))
+         (tags (mxtodo-item-tags todo)))
+    ;; Update the TODO struct
+    (setf (mxtodo-item-is-completed todo) new-completed)
+    (setf (mxtodo-item-date-completed-ts todo) new-completed-ts)
+    ;; Update the database
+    (mxtodo-db--update file-path line-number text-hash date-due-unix new-completed-unix tags)
     todo))
 
 (defun mxtodo--find-invisible-region-in-line ()
@@ -427,33 +566,11 @@ The resulting timestamp is returned as a ts struct."
      (progn (forward-visible-line 0) (point))
      (progn (forward-visible-line 1) (point)))))
 
-(defun mxtodo--serialize-date (datetime)
-  "Serialize a ts date as an ISO-8601 datetime formatted string."
-  (ts-format "%Y-%m-%dT%H:%M:%SZ" datetime))
-
-(defun mxtodo--serialize-due-date-str (todo)
-  "Serialize TODO due date."
-  (let ((date (mxtodo-item-date-due-ts todo)))
-    (if (not (equal date nil))
-        (format " (due %s)" (mxtodo--serialize-date date))
-      "")))
-
-(defun mxtodo--serialize-completed-date-str (todo)
-  "Serialize TODO due date."
-  (let ((date (mxtodo-item-date-completed-ts todo)))
-    (if (not (equal date nil))
-        (format " (completed %s)" (mxtodo--serialize-date date))
-      "")))
-
 (defun mxtodo--serialize-as-str (todo)
   "Serialize a TODO as a string."
-  (let* ((todo-line
-          (format "%s %s%s%s\n"
-                  (mxtodo--render-is-completed todo)
-                  (mxtodo-item-text todo)
-                  (mxtodo--serialize-due-date-str todo)
-                  (mxtodo--serialize-completed-date-str todo))))
-    todo-line))
+  (format "%s %s\n"
+          (mxtodo--render-is-completed todo)
+          (mxtodo-item-text todo)))
 
 (defun mxtodo--todo-is-fresh-p (todo)
   "Check that TODO note file has not been updated since last read."
@@ -477,6 +594,48 @@ The resulting timestamp is returned as a ts struct."
               (insert (mxtodo--serialize-as-str todo))
               (save-buffer)))
         (error "the file containing TODO has been modified since the last read; refresh the todo buffer.")))))
+
+(defun mxtodo-set-due-date (&optional buffer-name)
+  "Set or update the due date for the TODO at point."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
+    (let* ((todo (mxtodo--read-todo-from-line))
+           (due-date-read (read-string "Enter a due date: "))
+           (due-date-ts (if (not (string= "" due-date-read))
+                            (-let [(due-date-parsed err) (mxtodo--parse-date due-date-read)]
+                              (if (not (equal err nil))
+                                  (error err)
+                                due-date-parsed))
+                          nil))
+           (due-date-unix (if due-date-ts (truncate (ts-unix due-date-ts)) nil)))
+      (mxtodo-db--update
+       (mxtodo-item-file-path todo)
+       (mxtodo-item-file-line-number todo)
+       (mxtodo-item-text-hash todo)
+       due-date-unix
+       (if (mxtodo-item-date-completed-ts todo)
+           (truncate (ts-unix (mxtodo-item-date-completed-ts todo)))
+         nil)
+       (mxtodo-item-tags todo))
+      (mxtodo-make-todo-buffer buffer-name))))
+
+(defun mxtodo-clear-due-date (&optional buffer-name)
+  "Remove the due date from the TODO at point."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
+    (let* ((todo (mxtodo--read-todo-from-line)))
+      (mxtodo-db--update
+       (mxtodo-item-file-path todo)
+       (mxtodo-item-file-line-number todo)
+       (mxtodo-item-text-hash todo)
+       nil  ;; clear due date
+       (if (mxtodo-item-date-completed-ts todo)
+           (truncate (ts-unix (mxtodo-item-date-completed-ts todo)))
+         nil)
+       (mxtodo-item-tags todo))
+      (mxtodo-make-todo-buffer buffer-name))))
 
 ;;;###autoload
 (define-derived-mode mxtodo-mode text-mode "Mxtodo"
@@ -540,11 +699,18 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
     (unless folder-path (setq folder-path mxtodo-folder-path))
     (unless file-ext (setq file-ext mxtodo-file-extension))
     (unless todo-pattern (setq todo-pattern mxtodo-pattern-str))
-    (let* ((todos
-            (mapcar
-             (lambda (v) (mxtodo--make-todo-from-searcher-alist v))
-             (mxtodo--gather-todos folder-path file-ext todo-pattern)))
+    (let* ((raw-todos (append (mxtodo--gather-todos folder-path file-ext todo-pattern) nil))
+           (todos (mapcar
+                   (lambda (v) (mxtodo--make-todo-with-reconciliation v))
+                   raw-todos))
+           ;; Group raw todos by file for cleanup
+           (todos-by-file (-group-by (lambda (v) (cdr (assoc "file_path" v))) raw-todos))
            (sorted-todos (mxtodo--sort-todos todos)))
+      ;; Clean up orphaned TODOs from database
+      (dolist (file-group todos-by-file)
+        (let ((file-path (car file-group))
+              (file-todos (cdr file-group)))
+          (mxtodo-db--cleanup-orphaned-todos file-path file-todos)))
       (with-current-buffer (get-buffer-create buffer-name)
         (let ((inhibit-read-only t))
           (erase-buffer)
@@ -646,7 +812,64 @@ If the specified date does not parse, an error is raised."
           (progn
             (newline)
             (mxtodo--persist-todo todo)
+            (mxtodo-db--insert
+             file-name
+             (mxtodo-item-file-line-number todo)
+             (mxtodo--compute-text-hash todo-text)
+             (if due-date-ts (truncate (ts-unix due-date-ts)) nil)
+             nil  ;; date-completed is nil for new TODOs
+             '()) ;; tags is empty for new TODOs
             todo))))))
+
+(defun mxtodo-add-tags (&optional buffer-name)
+  "Add tags to the TODO at point.
+  Prompts for comma-separated tag names to add to existing tags."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
+    (let* ((todo (mxtodo--read-todo-from-line))
+           (current-tags (mxtodo-item-tags todo))
+           (new-tags-str (read-string "Enter tags (comma-separated): "))
+           (new-tags (mapcar (lambda (s) (string-trim s "^[ \t\n\r]*#*[ \t\n\r]*"))
+                             (split-string new-tags-str ",")))
+           (merged-tags (delete-dups (append current-tags new-tags))))
+      (mxtodo-db--update
+       (mxtodo-item-file-path todo)
+       (mxtodo-item-file-line-number todo)
+       (mxtodo-item-text-hash todo)
+       (if (mxtodo-item-date-due-ts todo)
+           (truncate (ts-unix (mxtodo-item-date-due-ts todo)))
+         nil)
+       (if (mxtodo-item-date-completed-ts todo)
+           (truncate (ts-unix (mxtodo-item-date-completed-ts todo)))
+         nil)
+       merged-tags)
+      (mxtodo-make-todo-buffer buffer-name))))
+
+(defun mxtodo-remove-tag (&optional buffer-name)
+    "Remove a tag from the TODO at point.
+  Prompts for tag selection from the TODO's existing tags."
+    (interactive)
+    (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+    (with-current-buffer buffer-name
+      (let* ((todo (mxtodo--read-todo-from-line))
+             (current-tags (mxtodo-item-tags todo)))
+        (if (null current-tags)
+            (message "No tags to remove")
+          (let* ((tag-to-remove (completing-read "Remove tag: " current-tags nil t))
+                 (updated-tags (remove tag-to-remove current-tags)))
+            (mxtodo-db--update
+             (mxtodo-item-file-path todo)
+             (mxtodo-item-file-line-number todo)
+             (mxtodo-item-text-hash todo)
+             (if (mxtodo-item-date-due-ts todo)
+                 (truncate (ts-unix (mxtodo-item-date-due-ts todo)))
+               nil)
+             (if (mxtodo-item-date-completed-ts todo)
+                 (truncate (ts-unix (mxtodo-item-date-completed-ts todo)))
+               nil)
+             updated-tags)
+            (mxtodo-make-todo-buffer buffer-name))))))
 
 ;;;###autoload
 (defun mxtodo-create-todo (&optional folder-path file-name buffer-name todo-text due-date-ts)
@@ -689,7 +912,6 @@ If the specified date does not parse, an error is raised."
     (mxtodo-make-todo-buffer buffer-name)
     mxtodo-hide-incomplete))
 
-
 (define-key mxtodo-mode-map (kbd "g") #'mxtodo-make-todo-buffer)
 (define-key mxtodo-mode-map (kbd "X") #'mxtodo-toggle-current-todo-completed)
 (define-key mxtodo-mode-map (kbd "q") #'kill-this-buffer)
@@ -697,6 +919,10 @@ If the specified date does not parse, an error is raised."
 (define-key mxtodo-mode-map (kbd "+") #'mxtodo-create-todo)
 (define-key mxtodo-mode-map (kbd "H") #'mxtodo-toggle-hide-completed)
 (define-key mxtodo-mode-map (kbd "h") #'mxtodo-toggle-hide-incomplete)
+(define-key mxtodo-mode-map (kbd "!") #'mxtodo-set-due-date)
+(define-key mxtodo-mode-map (kbd "D") #'mxtodo-clear-due-date)
+(define-key mxtodo-mode-map (kbd "#") #'mxtodo-add-tags)
+(define-key mxtodo-mode-map (kbd "T") #'mxtodo-remove-tag)
 (define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)
