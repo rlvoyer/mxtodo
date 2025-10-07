@@ -144,7 +144,7 @@ TAG="v$RELEASE_VERSION"
 
 gh release create $TAG -F CHANGELOG.md
 
-for asset in `ls mxtodo-searcher/release-artifacts`;
+for asset in `ls release-artifacts`;
 do
-    gh release upload --clobber $TAG $HERE/../mxtodo-searcher/release-artifacts/$asset
+    gh release upload --clobber $TAG $HERE/../release-artifacts/$asset
 done
