@@ -70,9 +70,9 @@ build_searcher_artifacts() {
     cross build --verbose --release --target=x86_64-unknown-linux-gnu || return 1
     cargo build --verbose --release --target=x86_64-apple-darwin || return 1
     cargo build --verbose --release --target=aarch64-apple-darwin || return 1
-    cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so || return 1
-    cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib || return 1
-    cp target/aarch64-apple-darwin/release/libmxtodo_searcher.dylib release-artifacts/libmxtodo_searcher.aarch64-apple-darwin.dylib || return 1
+    cp target/x86_64-unknown-linux-gnu/release/libmxtodo_searcher.so ../release-artifacts/libmxtodo_searcher.x86_64-unknown-linux-gnu.so || return 1
+    cp target/x86_64-apple-darwin/release/libmxtodo_searcher.dylib ../release-artifacts/libmxtodo_searcher.x86_64-apple-darwin.dylib || return 1
+    cp target/aarch64-apple-darwin/release/libmxtodo_searcher.dylib ../release-artifacts/libmxtodo_searcher.aarch64-apple-darwin.dylib || return 1
     popd > /dev/null && popd > /dev/null || return 1
 
     return 0
