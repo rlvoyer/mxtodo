@@ -1,6 +1,6 @@
 [package]
 name = "mxtodo_searcher"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Robert Voyer <robert.voyer@gmail.com>"]
 edition = "2018"
 description = "A very purpose-built library that uses ripgrep to search for TODO items in a directory of Markdown files."
