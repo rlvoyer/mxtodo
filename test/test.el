@@ -236,13 +236,9 @@
       (setq dir-prefix "notes"))
     (make-temp-file dir-prefix t)))
 
-(defvar mxtodo--test-original-db-path nil
-  "Stores the original database path during testing.")
-
 (defun setup-test-database ()
   "Set up a temporary test database and return its path."
   (let ((test-db-path (make-temp-file "mxtodo-test-db" nil ".db")))
-    (setq mxtodo--test-original-db-path mxtodo--db-path)
     (setq mxtodo--db-path test-db-path)
     (setq mxtodo--db nil)  ; Force re-initialization
     test-db-path))
@@ -254,10 +250,7 @@
     (setq mxtodo--db nil))
   (when mxtodo--db-path
     (when (file-exists-p mxtodo--db-path)
-      (delete-file mxtodo--db-path)))
-  (when mxtodo--test-original-db-path
-    (setq mxtodo--db-path mxtodo--test-original-db-path)
-    (setq mxtodo--test-original-db-path nil)))
+      (delete-file mxtodo--db-path))))
 
 (defun random-date-str ()
   "Generate a random date string."
@@ -354,16 +347,22 @@
     (should (equal actual expected))))
 
 (ert-deftest test-creating-a-todo-new-notefile ()
-  (let* ((notes-dir (make-test-notes-dir))
-         (todo-text "Water the garden")
-         (due-date (ts-adjust 'day +7 (ts-now))))
-    (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil)))))
+  (setup-test-database)
+  (unwind-protect
+      (let* ((notes-dir (make-test-notes-dir))
+             (todo-text "Water the garden")
+             (due-date (ts-adjust 'day +7 (ts-now))))
+        (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil))))
+    (teardown-test-database)))
 
 (ert-deftest test-adding-a-todo-works-existing-notefile ()
-  (let* ((notes-dir (make-test-notes-dir))
-         (todo-text "Take out the garbage")
-         (due-date (ts-adjust 'day +7 (ts-now))))
-    (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil)))))
+  (setup-test-database)
+  (unwind-protect
+      (let* ((notes-dir (make-test-notes-dir))
+             (todo-text "Take out the garbage")
+             (due-date (ts-adjust 'day +7 (ts-now))))
+        (should (not (equal (mxtodo--create-todo notes-dir nil todo-text due-date) nil))))
+    (teardown-test-database)))
 
 (ert-deftest test-search-directory-returns-the-expected-results ()
   (let* ((notes-dir (make-test-notes-dir))
