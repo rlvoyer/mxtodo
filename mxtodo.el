@@ -451,7 +451,7 @@ The resulting timestamp is returned as a ts struct."
 (defun mxtodo--make-todo-with-reconciliation (todo-alist)
   "Create a TODO item from searcher alist, reconciling with database.
 This handles the full flow: extract from alist, sync with DB,
-construct final struct."
+construct final struct. Uses text hash to track TODOs across reordering."
   (let* ((file-path (cdr (assoc "file_path" todo-alist)))
          (line-number (cdr (assoc "line_number" todo-alist)))
          (file-display-date-ts (make-ts :unix (cdr (assoc "display_date" todo-alist))))
@@ -469,40 +469,18 @@ construct final struct."
                 (t tags-raw)))
          (file-date-due (cdr (assoc "date_due" todo-alist)))
          (file-date-completed (cdr (assoc "date_completed" todo-alist)))
-         (db-record (mxtodo-db--get-todo file-path line-number)))
+         (db-record-at-line (mxtodo-db--get-todo file-path line-number))
+         (db-record-by-hash (mxtodo-db--find-by-hash file-path text-hash)))
 
-    (if (null db-record)
-        ;; Case 1: New TODO - insert into DB, migrating dates from file if present
-        (let ((now (truncate (ts-unix (ts-now)))))
-          (mxtodo-db--insert file-path line-number text-hash file-date-due file-date-completed tags)
-          (make-mxtodo-item
-           :file-path file-path
-           :file-line-number line-number
-           :file-display-date-ts file-display-date-ts
-           :file-last-update-ts file-last-update-ts
-           :text todo-text
-           :text-hash text-hash
-           :is-completed is-completed
-           :date-due-ts (if file-date-due (make-ts :unix file-date-due) nil)
-           :date-completed-ts (if file-date-completed (make-ts :unix file-date-completed) nil)
-           :date-created-ts (make-ts :unix now)
-           :date-modified-ts (make-ts :unix now)
-           :links links
-           :tags tags))
-
-      ;; Case 2: Existing TODO - use DB metadata, update if text changed
-      (let ((db-text-hash (nth 3 db-record))
-            (db-date-due (nth 4 db-record))
-            (db-date-completed (nth 5 db-record))
-            (db-date-created (nth 6 db-record))
-            (db-date-modified (nth 7 db-record))
-            (db-tags (let ((parsed (json-parse-string (nth 8 db-record) :array-type 'list)))
+    (cond
+     ;; Case 1: Found at current line with matching hash - TODO hasn't moved
+     ((and db-record-at-line (string= text-hash (nth 3 db-record-at-line)))
+      (let ((db-date-due (nth 4 db-record-at-line))
+            (db-date-completed (nth 5 db-record-at-line))
+            (db-date-created (nth 6 db-record-at-line))
+            (db-date-modified (nth 7 db-record-at-line))
+            (db-tags (let ((parsed (json-parse-string (nth 8 db-record-at-line) :array-type 'list)))
                        (if (eq parsed :null) '() parsed))))
-
-        (unless (string= text-hash db-text-hash)
-          ;; Text changed, update DB
-          (mxtodo-db--update file-path line-number text-hash db-date-due db-date-completed db-tags))
-
         (make-mxtodo-item
          :file-path file-path
          :file-line-number line-number
@@ -516,7 +494,77 @@ construct final struct."
          :date-created-ts (if db-date-created (make-ts :unix db-date-created) nil)
          :date-modified-ts (if db-date-modified (make-ts :unix db-date-modified) nil)
          :links links
-         :tags db-tags)))))
+         :tags db-tags)))
+
+     ;; Case 2: Found by hash at different line - TODO moved, update line number
+     ((and db-record-by-hash (not (= line-number (nth 2 db-record-by-hash))))
+      (let ((old-line-number (nth 2 db-record-by-hash))
+            (db-date-due (nth 4 db-record-by-hash))
+            (db-date-completed (nth 5 db-record-by-hash))
+            (db-date-created (nth 6 db-record-by-hash))
+            (db-date-modified (nth 7 db-record-by-hash))
+            (db-tags (let ((parsed (json-parse-string (nth 8 db-record-by-hash) :array-type 'list)))
+                       (if (eq parsed :null) '() parsed))))
+        ;; Delete old position
+        (mxtodo-db--delete file-path old-line-number)
+        ;; Delete whatever is at the current line if it exists and is different
+        (when (and db-record-at-line (not (string= text-hash (nth 3 db-record-at-line))))
+          (mxtodo-db--delete file-path line-number))
+        ;; Insert at new position
+        (mxtodo-db--insert file-path line-number text-hash db-date-due db-date-completed db-tags)
+        (make-mxtodo-item
+         :file-path file-path
+         :file-line-number line-number
+         :file-display-date-ts file-display-date-ts
+         :file-last-update-ts file-last-update-ts
+         :text todo-text
+         :text-hash text-hash
+         :is-completed is-completed
+         :date-due-ts (if db-date-due (make-ts :unix db-date-due) nil)
+         :date-completed-ts (if db-date-completed (make-ts :unix db-date-completed) nil)
+         :date-created-ts (if db-date-created (make-ts :unix db-date-created) nil)
+         :date-modified-ts (if db-date-modified (make-ts :unix db-date-modified) nil)
+         :links links
+         :tags db-tags)))
+
+     ;; Case 3: Different TODO at this line - old one was replaced
+     (db-record-at-line
+      ;; A different TODO is now at this line, the current TODO is new
+      (let ((now (truncate (ts-unix (ts-now)))))
+        (mxtodo-db--insert file-path line-number text-hash file-date-due file-date-completed tags)
+        (make-mxtodo-item
+         :file-path file-path
+         :file-line-number line-number
+         :file-display-date-ts file-display-date-ts
+         :file-last-update-ts file-last-update-ts
+         :text todo-text
+         :text-hash text-hash
+         :is-completed is-completed
+         :date-due-ts (if file-date-due (make-ts :unix file-date-due) nil)
+         :date-completed-ts (if file-date-completed (make-ts :unix file-date-completed) nil)
+         :date-created-ts (make-ts :unix now)
+         :date-modified-ts (make-ts :unix now)
+         :links links
+         :tags tags)))
+
+     ;; Case 4: Completely new TODO
+     (t
+      (let ((now (truncate (ts-unix (ts-now)))))
+        (mxtodo-db--insert file-path line-number text-hash file-date-due file-date-completed tags)
+        (make-mxtodo-item
+         :file-path file-path
+         :file-line-number line-number
+         :file-display-date-ts file-display-date-ts
+         :file-last-update-ts file-last-update-ts
+         :text todo-text
+         :text-hash text-hash
+         :is-completed is-completed
+         :date-due-ts (if file-date-due (make-ts :unix file-date-due) nil)
+         :date-completed-ts (if file-date-completed (make-ts :unix file-date-completed) nil)
+         :date-created-ts (make-ts :unix now)
+         :date-modified-ts (make-ts :unix now)
+         :links links
+         :tags tags))))))
 
 (defun mxtodo-db--cleanup-orphaned-todos (file-path disk-todos)
   "Remove TODOs from database that no longer exist in FILE-PATH.

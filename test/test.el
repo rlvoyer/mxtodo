@@ -236,6 +236,29 @@
       (setq dir-prefix "notes"))
     (make-temp-file dir-prefix t)))
 
+(defvar mxtodo--test-original-db-path nil
+  "Stores the original database path during testing.")
+
+(defun setup-test-database ()
+  "Set up a temporary test database and return its path."
+  (let ((test-db-path (make-temp-file "mxtodo-test-db" nil ".db")))
+    (setq mxtodo--test-original-db-path mxtodo--db-path)
+    (setq mxtodo--db-path test-db-path)
+    (setq mxtodo--db nil)  ; Force re-initialization
+    test-db-path))
+
+(defun teardown-test-database ()
+  "Clean up the test database."
+  (when mxtodo--db
+    (sqlite-close mxtodo--db)
+    (setq mxtodo--db nil))
+  (when mxtodo--db-path
+    (when (file-exists-p mxtodo--db-path)
+      (delete-file mxtodo--db-path)))
+  (when mxtodo--test-original-db-path
+    (setq mxtodo--db-path mxtodo--test-original-db-path)
+    (setq mxtodo--test-original-db-path nil)))
+
 (defun random-date-str ()
   "Generate a random date string."
   (let ((day-of-month (1+ (random 30)))
@@ -378,3 +401,75 @@
 
 (ert-deftest test-lib-extension-mac ()
   (should (equal (mxtodo--lib-extension "aarch64-apple-darwin21.6.0") "dylib")))
+
+(ert-deftest test-due-date-preserved-when-todos-reordered ()
+  "Test that due dates stay with the correct TODO when TODOs are reordered in a file."
+  (let* ((test-db-path (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (date-str "2021-01-15")
+         (notes-file (concat (file-name-as-directory notes-dir) date-str ".md"))
+         (expected-due-date (make-ts :year 2021 :month 7 :day 1 :hour 0 :minute 0 :second 0)))
+    (unwind-protect
+        (progn
+          ;; Create initial file with 3 TODOs
+          (with-temp-file notes-file
+            (insert "- [ ] Task A\n")
+            (insert "- [ ] Task B\n")
+            (insert "- [ ] Task C\n"))
+
+          ;; Initial scan - process all TODOs
+          (let* ((raw-todos (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                 (todos (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos)))
+
+            ;; Verify we have 3 TODOs
+            (should (equal (length todos) 3))
+
+            ;; Find "Task B" and set a due date on it
+            (let* ((task-b (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task B")) todos))
+                   (task-b-file-path (mxtodo-item-file-path task-b))
+                   (task-b-line-number (mxtodo-item-file-line-number task-b))
+                   (task-b-text-hash (mxtodo-item-text-hash task-b)))
+
+              (should (not (null task-b)))
+              (should (equal task-b-line-number 2))  ; Task B is at line 2 initially
+
+              ;; Set due date on Task B
+              (mxtodo-db--update task-b-file-path
+                                 task-b-line-number
+                                 task-b-text-hash
+                                 (truncate (ts-unix expected-due-date))
+                                 nil
+                                 '()))
+
+            ;; Now reorder the file: move Task B to line 1
+            (with-temp-file notes-file
+              (insert "- [ ] Task B\n")
+              (insert "- [ ] Task A\n")
+              (insert "- [ ] Task C\n"))
+
+            ;; Re-scan the file
+            (let* ((raw-todos-2 (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                   (todos-2 (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos-2)))
+
+              ;; Verify we still have 3 TODOs
+              (should (equal (length todos-2) 3))
+
+              ;; Find Task A and Task B
+              (let ((task-a (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task A")) todos-2))
+                    (task-b (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task B")) todos-2)))
+
+                ;; Task B should now be at line 1
+                (should (equal (mxtodo-item-file-line-number task-b) 1))
+
+                ;; Task A should now be at line 2
+                (should (equal (mxtodo-item-file-line-number task-a) 2))
+
+                ;; The critical assertion: Task B should still have the due date
+                (should (not (null (mxtodo-item-date-due-ts task-b))))
+                (should (ts= (mxtodo-item-date-due-ts task-b) expected-due-date))
+
+                ;; Task A should NOT have a due date
+                (should (null (mxtodo-item-date-due-ts task-a)))))))
+
+      ;; Cleanup
+      (teardown-test-database))))
