@@ -403,7 +403,7 @@
 
 (ert-deftest test-due-date-preserved-when-todos-reordered ()
   "Test that due dates stay with the correct TODO when TODOs are reordered in a file."
-  (let* ((test-db-path (setup-test-database))
+  (let* ((_ (setup-test-database))
          (notes-dir (make-test-notes-dir))
          (date-str "2021-01-15")
          (notes-file (concat (file-name-as-directory notes-dir) date-str ".md"))
