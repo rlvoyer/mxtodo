@@ -129,8 +129,21 @@
       )")
     (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_file_path ON todos(file_path)")
     (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_date_due ON todos(date_due)")
-    (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_text_hash ON todos(file_path, text_hash)"))
+    (sqlite-execute mxtodo--db "CREATE INDEX IF NOT EXISTS idx_text_hash ON todos(file_path, text_hash)")
+    ;; Migrate schema to add top-3 columns if they don't exist
+    (mxtodo-db--migrate-top-three-columns mxtodo--db))
   mxtodo--db)
+
+(defun mxtodo-db--migrate-top-three-columns (db)
+  "Add top-3 columns to the database if they don't exist."
+  (let* ((table-info (sqlite-select db "PRAGMA table_info(todos)"))
+         (column-names (mapcar (lambda (row) (nth 1 row)) table-info))
+         (has-is-top-three (member "is_top_three" column-names))
+         (has-top-three-marked-ts (member "top_three_marked_ts" column-names)))
+    (unless has-is-top-three
+      (sqlite-execute db "ALTER TABLE todos ADD COLUMN is_top_three INTEGER DEFAULT 0"))
+    (unless has-top-three-marked-ts
+      (sqlite-execute db "ALTER TABLE todos ADD COLUMN top_three_marked_ts INTEGER"))))
 
 (defun mxtodo-db--get-todo (file-path line-number)
   "Get TODO metadata from database by FILE-PATH and LINE-NUMBER."
@@ -149,15 +162,16 @@
     (car (sqlite-select db "SELECT * FROM todos WHERE file_path = ? AND text_hash = ?"
                         (list file-path text-hash)))))
 
-(defun mxtodo-db--insert (file-path line-number text-hash date-due date-completed tags)
+(defun mxtodo-db--insert (file-path line-number text-hash date-due date-completed tags &optional is-top-three top-three-marked-ts)
   "Insert a new TODO into the database."
   (let ((db (mxtodo-db--init))
-        (now (truncate (ts-unix (ts-now)))))
+        (now (truncate (ts-unix (ts-now))))
+        (top-three-flag (if is-top-three 1 0)))
     (sqlite-execute
      db
-     "INSERT INTO todos (file_path, line_number, text_hash, date_due, date_completed, date_created, date_modified, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-     (list file-path line-number text-hash date-due date-completed now now (json-encode tags)))))
+     "INSERT INTO todos (file_path, line_number, text_hash, date_due, date_completed, date_created, date_modified, tags, is_top_three, top_three_marked_ts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+     (list file-path line-number text-hash date-due date-completed now now (json-encode tags) top-three-flag top-three-marked-ts))))
 
 (defun mxtodo-db--update (file-path line-number text-hash date-due date-completed tags)
   "Update an existing TODO in the database."
@@ -179,6 +193,46 @@
   "Delete all TODOs for a specific file from the database."
   (let ((db (mxtodo-db--init)))
     (sqlite-execute db "DELETE FROM todos WHERE file_path = ?" (list file-path))))
+
+(defun mxtodo-db--get-top-three-todos ()
+  "Get all TODOs marked as top-3, sorted by timestamp."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-select db "SELECT * FROM todos WHERE is_top_three = 1 ORDER BY top_three_marked_ts ASC")))
+
+(defun mxtodo-db--set-top-three (file-path line-number timestamp)
+  "Mark a TODO as one of the top 3 priorities."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-execute
+     db
+     "UPDATE todos SET is_top_three = 1, top_three_marked_ts = ? WHERE file_path = ? AND line_number = ?"
+     (list timestamp file-path line-number))))
+
+(defun mxtodo-db--unset-top-three (file-path line-number)
+  "Remove top-3 status from a TODO."
+  (let ((db (mxtodo-db--init)))
+    (sqlite-execute
+     db
+     "UPDATE todos SET is_top_three = 0, top_three_marked_ts = NULL WHERE file_path = ? AND line_number = ?"
+     (list file-path line-number))))
+
+(defun mxtodo-db--count-top-three ()
+  "Count how many TODOs are currently marked as top-3."
+  (let ((db (mxtodo-db--init)))
+    (caar (sqlite-select db "SELECT COUNT(*) FROM todos WHERE is_top_three = 1"))))
+
+(defun mxtodo-db--clear-top-three-for-completed (file-path line-number)
+  "Clear top-3 status for a completed TODO."
+  (mxtodo-db--unset-top-three file-path line-number))
+
+(defun mxtodo--enforce-top-three-limit ()
+  "If more than 3 TODOs are marked as top-three, remove the oldest."
+  (let ((top-three-list (mxtodo-db--get-top-three-todos)))
+    (when (> (length top-three-list) 3)
+      ;; List is already sorted by timestamp ASC, so first item is oldest
+      (let* ((oldest (car top-three-list))
+             (file-path (nth 1 oldest))   ; Column 1 is file_path
+             (line-number (nth 2 oldest))) ; Column 2 is line_number
+        (mxtodo-db--unset-top-three file-path line-number)))))
 
 (defun mxtodo--compute-text-hash (text)
   "Compute SHA256 hash of TODO TEXT for change detection."
@@ -237,7 +291,9 @@
   (date-created-ts nil :type ts)
   (date-modified-ts nil :type ts)
   (links '() :type list)
-  (tags '() :type list))
+  (tags '() :type list)
+  (is-top-three nil :type boolean)
+  (top-three-marked-ts nil :type ts))
 
 (defun mxtodo--gather-todos (&optional folder-path file-ext todo-pattern)
   "Gather todo items from files matching specified parameters.
@@ -371,6 +427,15 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
   "Face for link URLs."
   :group 'mxtodo)
 
+(defface mxtodo--top-three-face
+  '((t
+     :background "#4F4F2F"
+     :weight bold
+     :underline t
+     ))
+  "Face for top 3 priority TODO items."
+  :group 'mxtodo)
+
 (defconst mxtodo--checkbox-offset 6
   "The length of the checkbox prefix on a rendered TODO item.")
 
@@ -423,6 +488,9 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
       (put-text-property invisible-start-pos invisible-end-pos 'invisible t line-text)
       (if (mxtodo-item-is-completed todo)
           (add-text-properties todo-text-start-pos todo-text-end-pos '(face mxtodo--completed-face) line-text))
+      ;; Apply top-3 background to entire visible portion
+      (when (mxtodo-item-is-top-three todo)
+        (add-text-properties 0 invisible-start-pos '(face mxtodo--top-three-face) line-text))
       (mxtodo--highlight-markdown-links line-text (mxtodo-item-links todo))
       line-text)))
 
@@ -480,7 +548,9 @@ construct final struct. Uses text hash to track TODOs across reordering."
             (db-date-created (nth 6 db-record-at-line))
             (db-date-modified (nth 7 db-record-at-line))
             (db-tags (let ((parsed (json-parse-string (nth 8 db-record-at-line) :array-type 'list)))
-                       (if (eq parsed :null) '() parsed))))
+                       (if (eq parsed :null) '() parsed)))
+            (db-is-top-three (nth 9 db-record-at-line))
+            (db-top-three-marked-ts (nth 10 db-record-at-line)))
         (make-mxtodo-item
          :file-path file-path
          :file-line-number line-number
@@ -494,7 +564,9 @@ construct final struct. Uses text hash to track TODOs across reordering."
          :date-created-ts (if db-date-created (make-ts :unix db-date-created) nil)
          :date-modified-ts (if db-date-modified (make-ts :unix db-date-modified) nil)
          :links links
-         :tags db-tags)))
+         :tags db-tags
+         :is-top-three (and db-is-top-three (= db-is-top-three 1))
+         :top-three-marked-ts (if db-top-three-marked-ts (make-ts :unix db-top-three-marked-ts) nil))))
 
      ;; Case 2: Found by hash at different line - TODO moved, update line number
      ((and db-record-by-hash (not (= line-number (nth 2 db-record-by-hash))))
@@ -504,14 +576,17 @@ construct final struct. Uses text hash to track TODOs across reordering."
             (db-date-created (nth 6 db-record-by-hash))
             (db-date-modified (nth 7 db-record-by-hash))
             (db-tags (let ((parsed (json-parse-string (nth 8 db-record-by-hash) :array-type 'list)))
-                       (if (eq parsed :null) '() parsed))))
+                       (if (eq parsed :null) '() parsed)))
+            (db-is-top-three (nth 9 db-record-by-hash))
+            (db-top-three-marked-ts (nth 10 db-record-by-hash)))
         ;; Delete old position
         (mxtodo-db--delete file-path old-line-number)
         ;; Delete whatever is at the current line if it exists and is different
         (when (and db-record-at-line (not (string= text-hash (nth 3 db-record-at-line))))
           (mxtodo-db--delete file-path line-number))
-        ;; Insert at new position
-        (mxtodo-db--insert file-path line-number text-hash db-date-due db-date-completed db-tags)
+        ;; Insert at new position with preserved top-3 status
+        (mxtodo-db--insert file-path line-number text-hash db-date-due db-date-completed db-tags
+                          (and db-is-top-three (= db-is-top-three 1)) db-top-three-marked-ts)
         (make-mxtodo-item
          :file-path file-path
          :file-line-number line-number
@@ -525,7 +600,9 @@ construct final struct. Uses text hash to track TODOs across reordering."
          :date-created-ts (if db-date-created (make-ts :unix db-date-created) nil)
          :date-modified-ts (if db-date-modified (make-ts :unix db-date-modified) nil)
          :links links
-         :tags db-tags)))
+         :tags db-tags
+         :is-top-three (and db-is-top-three (= db-is-top-three 1))
+         :top-three-marked-ts (if db-top-three-marked-ts (make-ts :unix db-top-three-marked-ts) nil))))
 
      ;; Case 3: Different TODO at this line - old one was replaced
      (db-record-at-line
@@ -545,7 +622,9 @@ construct final struct. Uses text hash to track TODOs across reordering."
          :date-created-ts (make-ts :unix now)
          :date-modified-ts (make-ts :unix now)
          :links links
-         :tags tags)))
+         :tags tags
+         :is-top-three nil
+         :top-three-marked-ts nil)))
 
      ;; Case 4: Completely new TODO
      (t
@@ -564,7 +643,9 @@ construct final struct. Uses text hash to track TODOs across reordering."
          :date-created-ts (make-ts :unix now)
          :date-modified-ts (make-ts :unix now)
          :links links
-         :tags tags))))))
+         :tags tags
+         :is-top-three nil
+         :top-three-marked-ts nil))))))
 
 (defun mxtodo-db--cleanup-orphaned-todos (file-path disk-todos)
   "Remove TODOs from database that no longer exist in FILE-PATH.
@@ -592,6 +673,9 @@ DISK-TODOS is a list of alists representing current TODOs from disk."
     (setf (mxtodo-item-date-completed-ts todo) new-completed-ts)
     ;; Update the database
     (mxtodo-db--update file-path line-number text-hash date-due-unix new-completed-unix tags)
+    ;; Auto-remove top-3 status when completing a TODO
+    (when new-completed
+      (mxtodo-db--clear-top-three-for-completed file-path line-number))
     todo))
 
 (defun mxtodo--find-invisible-region-in-line ()
@@ -786,6 +870,27 @@ Otherwise, it defaults to `mxtodo-pattern-str`."
         (mxtodo-make-todo-buffer buffer-name))))
   nil)
 
+;;;###autoload
+(defun mxtodo-toggle-current-todo-top-three (&optional buffer-name)
+  "Toggle the top-3 status of the TODO at point."
+  (interactive)
+  (unless buffer-name (setq buffer-name mxtodo-buffer-name))
+  (with-current-buffer buffer-name
+    (let* ((todo (mxtodo--read-todo-from-line))
+           (file-path (mxtodo-item-file-path todo))
+           (line-number (mxtodo-item-file-line-number todo))
+           (is-top-three (mxtodo-item-is-top-three todo)))
+      (if is-top-three
+          ;; Remove from top-3
+          (mxtodo-db--unset-top-three file-path line-number)
+        ;; Add to top-3 with FIFO enforcement
+        (progn
+          (mxtodo-db--set-top-three file-path line-number (truncate (ts-unix (ts-now))))
+          (mxtodo--enforce-top-three-limit)))
+      ;; Refresh the buffer to show updated status
+      (mxtodo-make-todo-buffer buffer-name)))
+  nil)
+
 (defun mxtodo--daily-note-filename (&optional folder-path)
   "Get the path to today's daily note file."
   (unless folder-path (setq folder-path mxtodo-folder-path))
@@ -972,6 +1077,7 @@ If the specified date does not parse, an error is raised."
 (define-key mxtodo-mode-map (kbd "D") #'mxtodo-clear-due-date)
 (define-key mxtodo-mode-map (kbd "#") #'mxtodo-add-tags)
 (define-key mxtodo-mode-map (kbd "T") #'mxtodo-remove-tag)
+(define-key mxtodo-mode-map (kbd "t") #'mxtodo-toggle-current-todo-top-three)
 (define-key mxtodo-mode-map [(meta .)] #'mxtodo-jump-to-current-todo-source)
 
 (provide 'mxtodo)
