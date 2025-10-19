@@ -303,6 +303,7 @@
                :file-last-update-ts (mxtodo--file-last-modified file-path)
                :date-due-ts due-date
                :text todo-text
+               :text-hash (mxtodo--compute-text-hash todo-text)
                :is-completed is-completed)))
         (cl-values todo-item nil))
     (cl-values nil "unable to parse")))
@@ -472,3 +473,295 @@
 
       ;; Cleanup
       (teardown-test-database))))
+
+;;; Top-3 TODOs Tests
+
+(ert-deftest test-mark-todo-as-top-three ()
+  "Test marking a TODO as one of the top 3."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todos (read-test-notes-file notes-file))
+         (todo (car todos))
+         (file-path (mxtodo-item-file-path todo))
+         (line-number (mxtodo-item-file-line-number todo))
+         (text-hash (mxtodo-item-text-hash todo))
+         (current-time (truncate (ts-unix (ts-now)))))
+    (unwind-protect
+        (progn
+          ;; First insert the TODO into the database
+          (mxtodo-db--insert file-path line-number text-hash nil nil '())
+
+          ;; Mark it as top-3
+          (mxtodo-db--set-top-three file-path line-number current-time)
+
+          ;; Retrieve and verify
+          (let ((retrieved (mxtodo-db--get-todo file-path line-number)))
+            (should (equal (nth 9 retrieved) 1))
+            (should (equal (nth 10 retrieved) current-time))))
+      (teardown-test-database))))
+
+(ert-deftest test-unmark-todo-from-top-three ()
+  "Test unmarking a TODO from the top 3."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todos (read-test-notes-file notes-file))
+         (todo (car todos))
+         (file-path (mxtodo-item-file-path todo))
+         (line-number (mxtodo-item-file-line-number todo))
+         (text-hash (mxtodo-item-text-hash todo))
+         (current-time (truncate (ts-unix (ts-now)))))
+    (unwind-protect
+        (progn
+          ;; Insert and mark as top-3
+          (mxtodo-db--insert file-path line-number text-hash nil nil '())
+          (mxtodo-db--set-top-three file-path line-number current-time)
+
+          ;; Unmark it
+          (mxtodo-db--unset-top-three file-path line-number)
+
+          ;; Verify it's no longer top-3
+          (let ((retrieved (mxtodo-db--get-todo file-path line-number)))
+            (should (equal (nth 9 retrieved) 0))
+            (should (null (nth 10 retrieved)))))
+      (teardown-test-database))))
+
+(ert-deftest test-get-top-three-todos ()
+  "Test retrieving the list of top 3 TODOs."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (notes-file (concat (file-name-as-directory notes-dir) "2021-01-15.md")))
+    (unwind-protect
+        (progn
+          ;; Create a file with 5 TODOs
+          (with-temp-file notes-file
+            (insert "- [ ] Task 1\n")
+            (insert "- [ ] Task 2\n")
+            (insert "- [ ] Task 3\n")
+            (insert "- [ ] Task 4\n")
+            (insert "- [ ] Task 5\n"))
+
+          ;; Scan and insert into database
+          (let* ((raw-todos (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                 (todos (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos)))
+
+            ;; Mark 3 of them as top-3 with different timestamps
+            (let ((task-1 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 1")) todos))
+                  (task-3 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 3")) todos))
+                  (task-5 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 5")) todos)))
+
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-1)
+                                        (mxtodo-item-file-line-number task-1)
+                                        1000)
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-3)
+                                        (mxtodo-item-file-line-number task-3)
+                                        2000)
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-5)
+                                        (mxtodo-item-file-line-number task-5)
+                                        3000)
+
+              ;; Get top-3 list
+              (let ((top-three (mxtodo-db--get-top-three-todos)))
+                (should (equal (length top-three) 3))
+
+                ;; Verify the correct TODOs are returned (should be sorted by timestamp)
+                ;; Column 2 is line_number
+                (should (equal (nth 2 (nth 0 top-three)) 1))  ; Task 1
+                (should (equal (nth 2 (nth 1 top-three)) 3))  ; Task 3
+                (should (equal (nth 2 (nth 2 top-three)) 5)))))) ; Task 5
+      (teardown-test-database))))
+
+(ert-deftest test-top-three-limit-enforced ()
+  "Test that marking a 4th TODO removes the oldest one (FIFO)."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (notes-file (concat (file-name-as-directory notes-dir) "2021-01-15.md")))
+    (unwind-protect
+        (progn
+          ;; Create a file with 4 TODOs
+          (with-temp-file notes-file
+            (insert "- [ ] Task 1\n")
+            (insert "- [ ] Task 2\n")
+            (insert "- [ ] Task 3\n")
+            (insert "- [ ] Task 4\n"))
+
+          ;; Scan and insert into database
+          (let* ((raw-todos (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                 (todos (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos)))
+
+            ;; Mark all 4 sequentially with increasing timestamps
+            (let ((task-1 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 1")) todos))
+                  (task-2 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 2")) todos))
+                  (task-3 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 3")) todos))
+                  (task-4 (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task 4")) todos)))
+
+              ;; Mark first 3
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-1)
+                                        (mxtodo-item-file-line-number task-1)
+                                        1000)
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-2)
+                                        (mxtodo-item-file-line-number task-2)
+                                        2000)
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-3)
+                                        (mxtodo-item-file-line-number task-3)
+                                        3000)
+
+              ;; Enforce the limit (should have 3)
+              (mxtodo--enforce-top-three-limit)
+              (should (equal (mxtodo-db--count-top-three) 3))
+
+              ;; Mark the 4th TODO
+              (mxtodo-db--set-top-three (mxtodo-item-file-path task-4)
+                                        (mxtodo-item-file-line-number task-4)
+                                        4000)
+
+              ;; Enforce limit again - Task 1 (oldest) should be removed
+              (mxtodo--enforce-top-three-limit)
+
+              ;; Should still have exactly 3
+              (should (equal (mxtodo-db--count-top-three) 3))
+
+              ;; Verify Task 1 is no longer in top-3
+              (let ((task-1-retrieved (mxtodo-db--get-todo (mxtodo-item-file-path task-1)
+                                                           (mxtodo-item-file-line-number task-1))))
+                (should (equal (nth 9 task-1-retrieved) 0)))
+
+              ;; Verify Tasks 2, 3, 4 are still in top-3
+              (let ((top-three (mxtodo-db--get-top-three-todos)))
+                (should (equal (length top-three) 3))
+                ;; Column 2 is line_number
+                (should (cl-some (lambda (todo) (equal (nth 2 todo) 2)) top-three))
+                (should (cl-some (lambda (todo) (equal (nth 2 todo) 3)) top-three))
+                (should (cl-some (lambda (todo) (equal (nth 2 todo) 4)) top-three))))))
+      (teardown-test-database))))
+
+(ert-deftest test-top-three-cleared-on-completion ()
+  "Test that completing a TODO automatically clears its top-3 status."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (notes-file (make-test-notes-file notes-dir 1))
+         (todos (read-test-notes-file notes-file))
+         (todo (car todos))
+         (file-path (mxtodo-item-file-path todo))
+         (line-number (mxtodo-item-file-line-number todo))
+         (text-hash (mxtodo-item-text-hash todo))
+         (current-time (truncate (ts-unix (ts-now)))))
+    (unwind-protect
+        (progn
+          ;; Insert and mark as top-3
+          (mxtodo-db--insert file-path line-number text-hash nil nil '())
+          (mxtodo-db--set-top-three file-path line-number current-time)
+
+          ;; Verify it's marked
+          (should (equal (nth 9 (mxtodo-db--get-todo file-path line-number)) 1))
+
+          ;; Complete the TODO (update with completion date)
+          (mxtodo-db--update file-path line-number text-hash nil current-time '())
+
+          ;; Clear top-3 status on completion
+          (mxtodo-db--clear-top-three-for-completed file-path line-number)
+
+          ;; Verify it's no longer top-3
+          (let ((retrieved (mxtodo-db--get-todo file-path line-number)))
+            (should (equal (nth 9 retrieved) 0))))
+      (teardown-test-database))))
+
+(ert-deftest test-top-three-preserved-when-todos-reordered ()
+  "Test that top-3 status stays with the correct TODO when TODOs are reordered."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (date-str "2021-01-15")
+         (notes-file (concat (file-name-as-directory notes-dir) date-str ".md")))
+    (unwind-protect
+        (progn
+          ;; Create initial file with 3 TODOs
+          (with-temp-file notes-file
+            (insert "- [ ] Task A\n")
+            (insert "- [ ] Task B\n")
+            (insert "- [ ] Task C\n"))
+
+          ;; Initial scan
+          (let* ((raw-todos (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                 (todos (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos)))
+
+            (should (equal (length todos) 3))
+
+            ;; Mark Task B as top-3
+            (let* ((task-b (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task B")) todos))
+                   (task-b-file-path (mxtodo-item-file-path task-b))
+                   (task-b-line-number (mxtodo-item-file-line-number task-b)))
+
+              (should (not (null task-b)))
+              (should (equal task-b-line-number 2))  ; Task B is at line 2 initially
+
+              ;; Mark as top-3
+              (mxtodo-db--set-top-three task-b-file-path task-b-line-number 1000))
+
+            ;; Reorder: move Task B to line 1
+            (with-temp-file notes-file
+              (insert "- [ ] Task B\n")
+              (insert "- [ ] Task A\n")
+              (insert "- [ ] Task C\n"))
+
+            ;; Re-scan
+            (let* ((raw-todos-2 (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                   (todos-2 (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos-2)))
+
+              (should (equal (length todos-2) 3))
+
+              ;; Find Task B and Task A
+              (let ((task-a (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task A")) todos-2))
+                    (task-b (cl-find-if (lambda (todo) (string= (mxtodo-item-text todo) "Task B")) todos-2)))
+
+                ;; Task B should now be at line 1
+                (should (equal (mxtodo-item-file-line-number task-b) 1))
+
+                ;; Task B should still be marked as top-3
+                (should (equal (mxtodo-item-is-top-three task-b) t))
+
+                ;; Task A should NOT be marked as top-3
+                (should (null (mxtodo-item-is-top-three task-a)))))))
+
+      (teardown-test-database))))
+
+(ert-deftest test-render-top-three-todo ()
+  "Test that a top-3 TODO renders with the background face."
+  (let* ((input-todo
+          (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 6
+                                                           :day 24
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "important task"
+                            :is-completed nil
+                            :is-top-three t
+                            :top-three-marked-ts (make-ts :year 2021 :month 6 :day 24)))
+         (rendered (mxtodo--render-todo input-todo))
+         (face-start 0))
+    ;; Verify the face is applied to the visible portion
+    (should (equal (get-text-property face-start 'face rendered) 'mxtodo--top-three-face))))
+
+(ert-deftest test-render-normal-todo-no-top-three ()
+  "Test that a normal TODO does not have the top-3 background face."
+  (let* ((input-todo
+          (make-mxtodo-item :file-path "/Users/robertvoyer/Documents/Notes/2021-6-24.md"
+                            :file-line-number 10
+                            :file-display-date-ts (make-ts :year 2021
+                                                           :month 6
+                                                           :day 24
+                                                           :hour 0
+                                                           :minute 0
+                                                           :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "normal task"
+                            :is-completed nil
+                            :is-top-three nil))
+         (rendered (mxtodo--render-todo input-todo))
+         (face-start 0))
+    ;; Verify no top-three face is applied
+    (should (not (equal (get-text-property face-start 'face rendered) 'mxtodo--top-three-face)))))
