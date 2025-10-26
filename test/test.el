@@ -765,3 +765,46 @@
          (face-start 0))
     ;; Verify no top-three face is applied
     (should (not (equal (get-text-property face-start 'face rendered) 'mxtodo--top-three-face)))))
+
+(ert-deftest test-unique-constraint-when-todo-replaced-at-same-line ()
+  "Test that replacing a TODO at the same line number doesn't violate UNIQUE constraint.
+When a different TODO moves to occupy the same line number as an existing TODO,
+the system should delete the old record before inserting the new one."
+  (let* ((_ (setup-test-database))
+         (notes-dir (make-test-notes-dir))
+         (date-str "2021-01-15")
+         (notes-file (concat (file-name-as-directory notes-dir) date-str ".md")))
+    (unwind-protect
+        (progn
+          ;; Create initial file with 2 TODOs
+          (with-temp-file notes-file
+            (insert "- [ ] Task A\n")
+            (insert "- [ ] Task B\n"))
+
+          ;; Initial scan - process both TODOs
+          (let* ((raw-todos (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                 (todos (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos)))
+
+            ;; Verify we have 2 TODOs
+            (should (equal (length todos) 2))
+
+            ;; Now replace the file content: Task B moves to line 1, Task A is deleted
+            (with-temp-file notes-file
+              (insert "- [ ] Task B\n"))
+
+            ;; Re-scan the file - this should NOT throw a UNIQUE constraint error
+            ;; Without the fix, this would fail because it tries to insert Task B at line 1
+            ;; while the old Task A record at line 1 still exists
+            (let* ((raw-todos-2 (append (mxtodo-searcher-search-directory notes-dir ".md" "^- ?\\[[Xx ]\\]") nil))
+                   (todos-2 (mapcar (lambda (v) (mxtodo--make-todo-with-reconciliation v)) raw-todos-2)))
+
+              ;; Should succeed with only 1 TODO now
+              (should (equal (length todos-2) 1))
+
+              ;; Verify it's Task B at line 1
+              (let ((task-b (car todos-2)))
+                (should (equal (mxtodo-item-text task-b) "Task B"))
+                (should (equal (mxtodo-item-file-line-number task-b) 1))))))
+
+      ;; Cleanup
+      (teardown-test-database))))

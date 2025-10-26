@@ -608,6 +608,8 @@ construct final struct. Uses text hash to track TODOs across reordering."
      (db-record-at-line
       ;; A different TODO is now at this line, the current TODO is new
       (let ((now (truncate (ts-unix (ts-now)))))
+        ;; Delete the old TODO before inserting the new one
+        (mxtodo-db--delete file-path line-number)
         (mxtodo-db--insert file-path line-number text-hash file-date-due file-date-completed tags)
         (make-mxtodo-item
          :file-path file-path
