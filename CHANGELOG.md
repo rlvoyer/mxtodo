@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 - enable toggling top 3 priority TODOs
+- sort priority TODOs first
 
 ## [0.5.1] - 2025-10-18
 - fix issue w/ TODO reordering causing preexisting metadata to be lost
