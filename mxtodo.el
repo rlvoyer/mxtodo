@@ -780,17 +780,29 @@ DISK-TODOS is a list of alists representing current TODOs from disk."
 (defun mxtodo--sort-todos (todos)
   "Sort TODOS, a list of todo items.
 
-TODOS are sorted by creation date and partitioned by completion status,
-with incomplete todo items first, followed by completed todo items."
-  (let* ((todos-sorted
-          (cl-sort (copy-tree todos) 'ts> :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
-         (todos-separated
-          (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos-sorted))
-         (todos-incomplete (car todos-separated))
-         (todos-complete (nth 1 todos-separated))
-         (default-date (ts-apply :year 1970 (ts-now)))
-         (todos-completed-sorted (cl-sort (copy-tree todos-complete) 'ts> :key (lambda (x) (or (mxtodo-item-date-completed-ts x) default-date)))))
-    (-flatten (list todos-incomplete todos-completed-sorted))))
+Priority (top-3) TODOs appear first, sorted by when they were marked as priority.
+Then incomplete non-priority TODOs sorted by creation date descending.
+Finally completed TODOs sorted by completion date descending."
+  (let* ((default-date (ts-apply :year 1970 (ts-now)))
+         ;; First separate by completion status
+         (todos-by-completion (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos))
+         (todos-incomplete (car todos-by-completion))
+         (todos-complete (nth 1 todos-by-completion))
+         ;; Separate incomplete into priority and non-priority
+         (incomplete-by-priority (-separate (lambda (todo) (mxtodo-item-is-top-three todo)) todos-incomplete))
+         (todos-priority (car incomplete-by-priority))
+         (todos-regular (nth 1 incomplete-by-priority))
+         ;; Sort priority by top-three-marked timestamp (ascending - earliest marked first)
+         (todos-priority-sorted
+          (cl-sort (copy-tree todos-priority) 'ts< :key (lambda (x) (or (mxtodo-item-top-three-marked-ts x) default-date))))
+         ;; Sort regular incomplete by creation date (descending)
+         (todos-regular-sorted
+          (cl-sort (copy-tree todos-regular) 'ts> :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
+         ;; Sort completed by completion date (descending)
+         (todos-completed-sorted
+          (cl-sort (copy-tree todos-complete) 'ts> :key (lambda (x) (or (mxtodo-item-date-completed-ts x) default-date)))))
+    ;; Return: priority first, then regular incomplete, then completed
+    (-flatten (list todos-priority-sorted todos-regular-sorted todos-completed-sorted))))
 
 (defun mxtodo--make-todo-xref (todo)
   "Make an xref from TODO."

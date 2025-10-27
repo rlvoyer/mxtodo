@@ -766,6 +766,73 @@
     ;; Verify no top-three face is applied
     (should (not (equal (get-text-property face-start 'face rendered) 'mxtodo--top-three-face)))))
 
+(ert-deftest test-priority-todos-sorted-first ()
+  "Test that priority (top-3) TODOs appear first in the sorted list.
+Priority TODOs should be sorted by their top-3 marked timestamp (ascending),
+followed by regular incomplete TODOs (by display date descending),
+followed by completed TODOs (by completion date descending)."
+  (let* (;; Priority TODO marked first (timestamp 1000)
+         (priority-todo-1
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-10.md"
+                            :file-line-number 1
+                            :file-display-date-ts (make-ts :year 2021 :month 7 :day 10
+                                                           :hour 0 :minute 0 :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "priority task 1"
+                            :is-completed nil
+                            :is-top-three t
+                            :top-three-marked-ts (make-ts :unix 1000)))
+         ;; Priority TODO marked second (timestamp 2000)
+         (priority-todo-2
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-11.md"
+                            :file-line-number 2
+                            :file-display-date-ts (make-ts :year 2021 :month 7 :day 11
+                                                           :hour 0 :minute 0 :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "priority task 2"
+                            :is-completed nil
+                            :is-top-three t
+                            :top-three-marked-ts (make-ts :unix 2000)))
+         ;; Regular incomplete TODO (newer date)
+         (regular-incomplete-todo-1
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-20.md"
+                            :file-line-number 3
+                            :file-display-date-ts (make-ts :year 2021 :month 7 :day 20
+                                                           :hour 0 :minute 0 :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "regular task 1"
+                            :is-completed nil
+                            :is-top-three nil))
+         ;; Regular incomplete TODO (older date)
+         (regular-incomplete-todo-2
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-15.md"
+                            :file-line-number 4
+                            :file-display-date-ts (make-ts :year 2021 :month 7 :day 15
+                                                           :hour 0 :minute 0 :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "regular task 2"
+                            :is-completed nil
+                            :is-top-three nil))
+         ;; Completed TODO
+         (completed-todo
+          (make-mxtodo-item :file-path "/path/to/notes/2021-7-5.md"
+                            :file-line-number 5
+                            :file-display-date-ts (make-ts :year 2021 :month 7 :day 5
+                                                           :hour 0 :minute 0 :second 0)
+                            :file-last-update-ts (ts-now)
+                            :text "completed task"
+                            :is-completed t))
+         ;; Shuffle them to test sorting
+         (todos (nshuffle (list priority-todo-1 priority-todo-2
+                                regular-incomplete-todo-1 regular-incomplete-todo-2
+                                completed-todo)))
+         ;; Expected order: priority TODOs first (by timestamp), then regular incomplete (by date desc), then completed
+         (expected (list priority-todo-1 priority-todo-2
+                         regular-incomplete-todo-1 regular-incomplete-todo-2
+                         completed-todo))
+         (actual (mxtodo--sort-todos todos)))
+    (should (equal expected actual))))
+
 (ert-deftest test-unique-constraint-when-todo-replaced-at-same-line ()
   "Test that replacing a TODO at the same line number doesn't violate UNIQUE constraint.
 When a different TODO moves to occupy the same line number as an existing TODO,
