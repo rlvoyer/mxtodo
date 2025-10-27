@@ -798,9 +798,9 @@ Finally completed TODOs sorted by completion date descending."
          ;; Sort regular incomplete by creation date (descending)
          (todos-regular-sorted
           (cl-sort (copy-tree todos-regular) 'ts> :key (lambda (x) (mxtodo-item-file-display-date-ts x))))
-         ;; Sort completed by completion date (descending)
+         ;; Sort completed by completion date (descending), fallback to file display date
          (todos-completed-sorted
-          (cl-sort (copy-tree todos-complete) 'ts> :key (lambda (x) (or (mxtodo-item-date-completed-ts x) default-date)))))
+          (cl-sort (copy-tree todos-complete) 'ts> :key (lambda (x) (or (mxtodo-item-date-completed-ts x) (mxtodo-item-file-display-date-ts x))))))
     ;; Return: priority first, then regular incomplete, then completed
     (-flatten (list todos-priority-sorted todos-regular-sorted todos-completed-sorted))))
 
