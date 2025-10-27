@@ -780,9 +780,9 @@ DISK-TODOS is a list of alists representing current TODOs from disk."
 (defun mxtodo--sort-todos (todos)
   "Sort TODOS, a list of todo items.
 
-Priority (top-3) TODOs appear first, sorted by when they were marked as priority.
-Then incomplete non-priority TODOs sorted by creation date descending.
-Finally completed TODOs sorted by completion date descending."
+Priority (top-3) TODOs appear first, sorted by when they were marked as
+priority.  Then incomplete non-priority TODOs sorted by creation date
+descending.  Finally completed TODOs sorted by completion date descending."
   (let* ((default-date (ts-apply :year 1970 (ts-now)))
          ;; First separate by completion status
          (todos-by-completion (-separate (lambda (todo) (not (mxtodo-item-is-completed todo))) todos))
